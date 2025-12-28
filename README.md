@@ -887,3 +887,36 @@ The platform shall provide an administrative interface for HealthFirst staff to 
 | recommend | Chatbot | Suggest plans (Phase 2) | POST | chatbot |
 
 ---
+
+```text
+
+customer_profile/
+├── __init__.py
+├── api/
+│   ├── __init__.py
+│   ├── signup_api.py
+│   └── login_api.py
+├── dto/
+│   ├── __init__.py
+│   ├── signup_dto.py
+│   ├── login_dto.py
+│   └── customer_response_dto.py
+├── service/
+│   ├── __init__.py
+│   ├── customer_service.py          # Interface (ABC)
+│   ├── customer_service_factory.py
+│   └── impl/
+│       ├── __init__.py
+│       └── customer_service_impl.py
+├── dao/
+│   ├── __init__.py
+│   ├── customer_dao.py              # Interface (ABC)
+│   ├── customer_dao_factory.py
+│   └── impl/
+│       ├── __init__.py
+│       └── customer_dao_impl.py
+└── model/
+    ├── __init__.py
+    └── customer.py
+
+```
