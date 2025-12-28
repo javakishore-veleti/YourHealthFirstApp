@@ -104,8 +104,8 @@ class CustomerServiceImpl(CustomerService):
         self._customer_dao.update(customer)
         
         # Generate JWT tokens
-        access_token = create_access_token(identity=customer.id)
-        refresh_token = create_refresh_token(identity=customer.id)
+        access_token = create_access_token(identity=str(customer.id))
+        refresh_token = create_refresh_token(identity=str(customer.id))
         
         return LoginResponseDTO(
             success=True,

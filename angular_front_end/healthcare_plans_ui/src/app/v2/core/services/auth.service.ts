@@ -25,7 +25,9 @@ export class AuthService {
   constructor(
     private http: HttpClient,
     private router: Router
-  ) {}
+  ) {
+    console.log('AuthService initialized, API_URL:', this.API_URL);
+  }
 
   signup(request: SignupRequestDTO): Observable<SignupResponseDTO> {
     return this.http.post<SignupResponseDTO>(`${this.API_URL}/customers/signup`, request)
@@ -38,13 +40,25 @@ export class AuthService {
   }
 
   login(request: LoginRequestDTO): Observable<LoginResponseDTO> {
+    console.log('Login request:', request);
     return this.http.post<LoginResponseDTO>(`${this.API_URL}/customers/login`, request)
       .pipe(
         tap(response => {
+          console.log('Login response received:', response);
+          console.log('Response success:', response.success);
+          console.log('Response data:', response.data);
+          
           if (response.success && response.data) {
+            console.log('Saving tokens to localStorage...');
             this.setTokens(response.data.access_token, response.data.refresh_token);
             this.setCustomer(response.data.customer);
             this.isAuthenticatedSubject.next(true);
+            
+            // Verify tokens were saved
+            console.log('Token saved:', this.getAccessToken()?.substring(0, 20) + '...');
+            console.log('Customer saved:', this.getCurrentCustomer());
+          } else {
+            console.log('Response success is false or no data');
           }
         }),
         catchError(error => {
@@ -55,12 +69,15 @@ export class AuthService {
   }
 
   refreshToken(): Observable<{ success: boolean; access_token: string }> {
+    const refreshToken = this.getRefreshToken();
+    console.log('Refresh token exists:', !!refreshToken);
+    
     return this.http.post<{ success: boolean; access_token: string }>(
       `${this.API_URL}/customers/refresh`,
       {},
       {
         headers: {
-          'Authorization': `Bearer ${this.getRefreshToken()}`
+          'Authorization': `Bearer ${refreshToken}`
         }
       }
     ).pipe(
@@ -70,6 +87,7 @@ export class AuthService {
         }
       }),
       catchError(error => {
+        console.error('Refresh token error:', error);
         this.logout();
         return throwError(() => error);
       })
@@ -77,9 +95,13 @@ export class AuthService {
   }
 
   getProfile(): Observable<ApiResponse<Customer>> {
+    const token = this.getAccessToken();
+    console.log('GetProfile called, token exists:', !!token);
+    
     return this.http.get<ApiResponse<Customer>>(`${this.API_URL}/customers/me`)
       .pipe(
         tap(response => {
+          console.log('GetProfile response:', response);
           if (response.success && response.data) {
             this.currentCustomerSubject.next(response.data);
             localStorage.setItem(this.CUSTOMER_KEY, JSON.stringify(response.data));
@@ -93,6 +115,7 @@ export class AuthService {
   }
 
   logout(): void {
+    console.log('Logout called');
     localStorage.removeItem(this.ACCESS_TOKEN_KEY);
     localStorage.removeItem(this.REFRESH_TOKEN_KEY);
     localStorage.removeItem(this.CUSTOMER_KEY);
@@ -122,8 +145,10 @@ export class AuthService {
   }
 
   private setTokens(accessToken: string, refreshToken: string): void {
+    console.log('setTokens called');
     localStorage.setItem(this.ACCESS_TOKEN_KEY, accessToken);
     localStorage.setItem(this.REFRESH_TOKEN_KEY, refreshToken);
+    console.log('Tokens set in localStorage');
   }
 
   private setAccessToken(accessToken: string): void {
@@ -131,6 +156,7 @@ export class AuthService {
   }
 
   private setCustomer(customer: any): void {
+    console.log('setCustomer called:', customer);
     localStorage.setItem(this.CUSTOMER_KEY, JSON.stringify(customer));
     this.currentCustomerSubject.next(customer);
   }

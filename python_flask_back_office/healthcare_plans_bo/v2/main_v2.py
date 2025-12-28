@@ -16,6 +16,8 @@ def create_app(config_name=None):
     
     app = Flask(__name__)
     app.config.from_object(config[config_name])
+
+    print(f"JWT_SECRET_KEY: {app.config.get('JWT_SECRET_KEY')[:20]}...")
     
     # Initialize extensions
     db.init_app(app)

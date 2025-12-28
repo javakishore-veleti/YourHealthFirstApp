@@ -1,6 +1,5 @@
 import { NgModule } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { HttpClientModule, HTTP_INTERCEPTORS } from '@angular/common/http';
 import { ReactiveFormsModule } from '@angular/forms';
 import { RouterModule, Routes } from '@angular/router';
 
@@ -8,9 +7,8 @@ import { RouterModule, Routes } from '@angular/router';
 import { AuthService } from './core/services/auth.service';
 import { CustomerService } from './customer-profile/services/customer.service';
 
-// Guards & Interceptors
+// Guards
 import { AuthGuard } from './core/guards/auth.guard';
-import { AuthInterceptor } from './core/interceptors/auth.interceptor';
 
 // Components
 import { SignupComponent } from './customer-profile/components/signup/signup.component';
@@ -32,19 +30,13 @@ const routes: Routes = [
   ],
   imports: [
     CommonModule,
-    HttpClientModule,
     ReactiveFormsModule,
     RouterModule.forChild(routes)
   ],
   providers: [
     AuthService,
     CustomerService,
-    AuthGuard,
-    {
-      provide: HTTP_INTERCEPTORS,
-      useClass: AuthInterceptor,
-      multi: true
-    }
+    AuthGuard
   ]
 })
 export class V2Module { }

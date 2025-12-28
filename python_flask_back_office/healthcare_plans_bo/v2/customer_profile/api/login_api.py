@@ -40,6 +40,11 @@ def login():
     }
     """
     try:
+         # ADD THIS DEBUG
+        from flask import current_app
+        print(f"LOGIN - JWT Secret (first 20): {current_app.config.get('JWT_SECRET_KEY')[:20]}")
+        
+
         data = request.get_json()
         
         if not data:
@@ -115,9 +120,14 @@ def get_current_user():
     }
     """
     try:
+         # ADD THIS DEBUG
+        from flask import current_app
+        print(f"JWT Secret (first 20): {current_app.config.get('JWT_SECRET_KEY')[:20]}")
+        
+
         current_user_id = get_jwt_identity()
         customer_service = CustomerServiceFactory.get_instance()
-        profile = customer_service.get_profile(current_user_id)
+        profile = customer_service.get_profile(int(current_user_id))
         
         return jsonify({
             'success': True,
@@ -134,3 +144,27 @@ def get_current_user():
             'success': False,
             'message': f'An error occurred: {str(e)}'
         }), 500
+
+
+@login_bp.route('/test-token', methods=['GET'])
+def test_token():
+    """Debug endpoint to test token"""
+    from flask import current_app, request
+    import jwt
+    
+    auth_header = request.headers.get('Authorization', '')
+    print(f"Auth header: {auth_header[:50]}...")
+    
+    if auth_header.startswith('Bearer '):
+        token = auth_header[7:]
+        secret = current_app.config.get('JWT_SECRET_KEY')
+        print(f"Secret: {secret[:20]}...")
+        
+        try:
+            # Try to decode manually
+            decoded = jwt.decode(token, secret, algorithms=['HS256'])
+            return {'success': True, 'decoded': decoded}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+    
+    return {'success': False, 'error': 'No token'}
