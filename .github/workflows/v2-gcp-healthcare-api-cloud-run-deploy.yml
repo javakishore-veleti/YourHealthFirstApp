@@ -98,7 +98,6 @@ jobs:
             --timeout=300
           env_vars: |
             FLASK_ENV=production
-            PORT=8080
 
       - name: Verify Deployment
         run: |
