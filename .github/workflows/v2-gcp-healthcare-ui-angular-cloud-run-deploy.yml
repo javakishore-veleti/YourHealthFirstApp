@@ -1,7 +1,7 @@
 # GitHub Actions Workflow: Deploy Angular V2 UI to Cloud Run
 # Location: .github/workflows/v2-gcp-angular-ui-cloud-run-deploy.yml
 
-name: V2 GCP Angular UI - Deploy
+name: V2 GCP UI Angular - Deploy
 
 on:
   workflow_dispatch:
