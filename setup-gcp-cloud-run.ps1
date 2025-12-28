@@ -8,17 +8,22 @@
     2. Artifact Registry repositories for Docker images
     3. Workload Identity Federation for secure GitHub authentication
 
+    The script automatically detects the GitHub repository from the current
+    git repository's remote URL.
+
 .PREREQUISITES
     - gcloud CLI installed and in PATH
+    - git installed and in PATH
     - Run: gcloud auth login
     - Owner or Editor role on the GCP project
+    - Run this script from within a git repository
 
 .USAGE
     .\gcp-healthcare-cloud-run-setup.ps1
 
 .NOTES
     Author: Healthcare Plans DevOps
-    Version: 1.0
+    Version: 1.1 (Auto-detect GitHub repo)
 #>
 
 # ============================================================================
@@ -26,10 +31,9 @@
 # ============================================================================
 
 $CONFIG = @{
-    ProjectId           = "your-gcp-project-id"
+    ProjectId           = "engineering-college-apps"
     Region              = "us-central1"
     ServiceAccountName  = "github-actions-cloudrun"
-    GitHubRepo          = "javakishore-veleti/YourHealthFirstApp"
     PoolName            = "github-actions-pool"
     ProviderName        = "github-actions-provider"
     UIArtifactRepo      = "healthcare-plans-ui"
@@ -50,12 +54,12 @@ function Write-Success {
     Write-Host "  SUCCESS: $Message" -ForegroundColor Green
 }
 
-function Write-Warning {
+function Write-Warn {
     param([string]$Message)
     Write-Host "  WARNING: $Message" -ForegroundColor Yellow
 }
 
-function Write-Error {
+function Write-Err {
     param([string]$Message)
     Write-Host "  ERROR: $Message" -ForegroundColor Red
 }
@@ -88,6 +92,92 @@ function Invoke-GCloud {
     return $result
 }
 
+function Get-GitHubRepoFromRemote {
+    <#
+    .SYNOPSIS
+        Extracts GitHub owner/repo from git remote URL
+    .DESCRIPTION
+        Supports both HTTPS and SSH URL formats:
+        - https://github.com/owner/repo.git
+        - https://github.com/owner/repo
+        - git@github.com:owner/repo.git
+        - git@github.com:owner/repo
+    #>
+    
+    # Check if we're in a git repository
+    try {
+        $null = git rev-parse --is-inside-work-tree 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            return $null
+        }
+    }
+    catch {
+        return $null
+    }
+    
+    # Try to get remote URL (prefer origin)
+    $remoteUrl = $null
+    try {
+        $remoteUrl = git remote get-url origin 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            # Try first available remote
+            $remotes = git remote 2>&1
+            if ($remotes -and $LASTEXITCODE -eq 0) {
+                $firstRemote = ($remotes -split "`n")[0]
+                $remoteUrl = git remote get-url $firstRemote 2>&1
+            }
+        }
+    }
+    catch {
+        return $null
+    }
+    
+    if (-not $remoteUrl -or $LASTEXITCODE -ne 0) {
+        return $null
+    }
+    
+    $remoteUrl = $remoteUrl.Trim()
+    
+    # Parse GitHub repo from URL
+    $repo = $null
+    
+    # HTTPS format: https://github.com/owner/repo.git or https://github.com/owner/repo
+    if ($remoteUrl -match 'https://github\.com/([^/]+/[^/]+?)(?:\.git)?$') {
+        $repo = $matches[1]
+    }
+    # SSH format: git@github.com:owner/repo.git or git@github.com:owner/repo
+    elseif ($remoteUrl -match 'git@github\.com:([^/]+/[^/]+?)(?:\.git)?$') {
+        $repo = $matches[1]
+    }
+    
+    # Remove .git suffix if still present
+    if ($repo) {
+        $repo = $repo -replace '\.git$', ''
+    }
+    
+    return $repo
+}
+
+# ============================================================================
+# AUTO-DETECT GITHUB REPOSITORY
+# ============================================================================
+
+Write-Host "Detecting GitHub repository..." -ForegroundColor Gray
+
+$GitHubRepo = Get-GitHubRepoFromRemote
+
+if (-not $GitHubRepo) {
+    Write-Warn "Could not auto-detect GitHub repository."
+    Write-Host "  Make sure you're running this script from within the git repository." -ForegroundColor Gray
+    Write-Host ""
+    $GitHubRepo = Read-Host "Enter GitHub repository (format: owner/repo)"
+    
+    if (-not $GitHubRepo) {
+        Write-Err "GitHub repository is required. Exiting."
+        exit 1
+    }
+}
+
 # ============================================================================
 # MAIN SCRIPT
 # ============================================================================
@@ -104,7 +194,7 @@ Write-Host @"
 Configuration:
   Project ID:   $($CONFIG.ProjectId)
   Region:       $($CONFIG.Region)
-  GitHub Repo:  $($CONFIG.GitHubRepo)
+  GitHub Repo:  $GitHubRepo (auto-detected)
 
 "@ -ForegroundColor White
 
@@ -138,7 +228,7 @@ try {
     $saExists = Test-GCloudCommand "gcloud iam service-accounts describe $serviceAccountEmail"
     
     if ($saExists) {
-        Write-Warning "Service Account already exists, skipping creation"
+        Write-Warn "Service Account already exists, skipping creation"
     }
     else {
         Invoke-GCloud @"
@@ -169,7 +259,7 @@ gcloud iam service-accounts create $($CONFIG.ServiceAccountName) --display-name=
     # UI Repository
     $uiRepoExists = Test-GCloudCommand "gcloud artifacts repositories describe $($CONFIG.UIArtifactRepo) --location=$($CONFIG.Region)"
     if ($uiRepoExists) {
-        Write-Warning "Repository $($CONFIG.UIArtifactRepo) already exists, skipping"
+        Write-Warn "Repository $($CONFIG.UIArtifactRepo) already exists, skipping"
     }
     else {
         Invoke-GCloud "gcloud artifacts repositories create $($CONFIG.UIArtifactRepo) --repository-format=docker --location=$($CONFIG.Region) --description=`"Docker images for Healthcare Plans Angular UI`""
@@ -179,7 +269,7 @@ gcloud iam service-accounts create $($CONFIG.ServiceAccountName) --display-name=
     # BO Repository
     $boRepoExists = Test-GCloudCommand "gcloud artifacts repositories describe $($CONFIG.BOArtifactRepo) --location=$($CONFIG.Region)"
     if ($boRepoExists) {
-        Write-Warning "Repository $($CONFIG.BOArtifactRepo) already exists, skipping"
+        Write-Warn "Repository $($CONFIG.BOArtifactRepo) already exists, skipping"
     }
     else {
         Invoke-GCloud "gcloud artifacts repositories create $($CONFIG.BOArtifactRepo) --repository-format=docker --location=$($CONFIG.Region) --description=`"Docker images for Healthcare Plans Flask Back Office`""
@@ -194,7 +284,7 @@ gcloud iam service-accounts create $($CONFIG.ServiceAccountName) --display-name=
     $poolExists = Test-GCloudCommand "gcloud iam workload-identity-pools describe $($CONFIG.PoolName) --location=global"
     
     if ($poolExists) {
-        Write-Warning "Workload Identity Pool already exists, skipping"
+        Write-Warn "Workload Identity Pool already exists, skipping"
     }
     else {
         Invoke-GCloud "gcloud iam workload-identity-pools create $($CONFIG.PoolName) --location=global --display-name=`"GitHub Actions Pool`" --description=`"Identity pool for GitHub Actions CI/CD`""
@@ -206,11 +296,11 @@ gcloud iam service-accounts create $($CONFIG.ServiceAccountName) --display-name=
     $providerExists = Test-GCloudCommand "gcloud iam workload-identity-pools providers describe $($CONFIG.ProviderName) --workload-identity-pool=$($CONFIG.PoolName) --location=global"
     
     if ($providerExists) {
-        Write-Warning "Workload Identity Provider already exists, skipping"
+        Write-Warn "Workload Identity Provider already exists, skipping"
     }
     else {
         Invoke-GCloud @"
-gcloud iam workload-identity-pools providers create-oidc $($CONFIG.ProviderName) --location=global --workload-identity-pool=$($CONFIG.PoolName) --display-name="GitHub Actions Provider" --issuer-uri="https://token.actions.githubusercontent.com" --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.repository=assertion.repository,attribute.repository_owner=assertion.repository_owner" --attribute-condition="assertion.repository=='$($CONFIG.GitHubRepo)'"
+gcloud iam workload-identity-pools providers create-oidc $($CONFIG.ProviderName) --location=global --workload-identity-pool=$($CONFIG.PoolName) --display-name="GitHub Actions Provider" --issuer-uri="https://token.actions.githubusercontent.com" --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.repository=assertion.repository,attribute.repository_owner=assertion.repository_owner" --attribute-condition="assertion.repository=='$GitHubRepo'"
 "@
         Write-Success "Workload Identity Provider created"
     }
@@ -226,7 +316,7 @@ gcloud iam workload-identity-pools providers create-oidc $($CONFIG.ProviderName)
     
     # Configure service account impersonation
     Write-Host "    Configuring service account impersonation..." -ForegroundColor Gray
-    $member = "principalSet://iam.googleapis.com/projects/$projectNumber/locations/global/workloadIdentityPools/$($CONFIG.PoolName)/attribute.repository/$($CONFIG.GitHubRepo)"
+    $member = "principalSet://iam.googleapis.com/projects/$projectNumber/locations/global/workloadIdentityPools/$($CONFIG.PoolName)/attribute.repository/$GitHubRepo"
     Invoke-GCloud "gcloud iam service-accounts add-iam-policy-binding $serviceAccountEmail --role=roles/iam.workloadIdentityUser --member=`"$member`" --quiet" -Silent
     Write-Success "Workload Identity Federation configured"
 
@@ -256,7 +346,7 @@ gcloud iam workload-identity-pools providers create-oidc $($CONFIG.ProviderName)
 GitHub Secrets Configuration
 ----------------------------------------------
 Add these secrets to your GitHub repository:
-  Repository -> Settings -> Secrets and variables -> Actions
+  https://github.com/$GitHubRepo/settings/secrets/actions
 
 "@ -ForegroundColor Green
 
@@ -285,7 +375,7 @@ Cloud Run Console:
   https://console.cloud.google.com/run?project=$($CONFIG.ProjectId)
 
 GitHub Actions:
-  https://github.com/$($CONFIG.GitHubRepo)/actions
+  https://github.com/$GitHubRepo/actions
 ==============================================
 "@ -ForegroundColor White
 
@@ -302,7 +392,7 @@ GCP_WORKLOAD_IDENTITY_PROVIDER=$workloadIdentityProvider
     }
 }
 catch {
-    Write-Error $_.Exception.Message
+    Write-Err $_.Exception.Message
     Write-Host "`nSetup failed. Please check the error above and try again." -ForegroundColor Red
     exit 1
 }

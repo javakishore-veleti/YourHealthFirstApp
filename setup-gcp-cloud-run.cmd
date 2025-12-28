@@ -9,8 +9,10 @@ REM 3. Workload Identity Federation for secure GitHub authentication
 REM
 REM Prerequisites:
 REM   - gcloud CLI installed and in PATH
+REM   - git installed and in PATH
 REM   - Run: gcloud auth login
 REM   - Owner or Editor role on the GCP project
+REM   - Run this script from within a git repository
 REM
 REM Usage:
 REM   gcp-healthcare-cloud-run-setup.cmd
@@ -22,10 +24,9 @@ REM ============================================================================
 REM CONFIGURATION - UPDATE THESE VALUES
 REM ============================================================================
 
-set PROJECT_ID=your-gcp-project-id
+set PROJECT_ID=engineering-college-apps
 set REGION=us-central1
 set SERVICE_ACCOUNT_NAME=github-actions-cloudrun
-set GITHUB_REPO=javakishore-veleti/YourHealthFirstApp
 set POOL_NAME=github-actions-pool
 set PROVIDER_NAME=github-actions-provider
 
@@ -34,9 +35,71 @@ set UI_ARTIFACT_REPO=healthcare-plans-ui
 set BO_ARTIFACT_REPO=healthcare-plans-bo
 
 REM ============================================================================
+REM AUTO-DETECT GITHUB REPOSITORY
+REM ============================================================================
+
+echo Detecting GitHub repository...
+
+REM Check if we're in a git repository
+git rev-parse --is-inside-work-tree >nul 2>&1
+if %ERRORLEVEL% NEQ 0 (
+    echo WARNING: Not in a git repository.
+    set /p GITHUB_REPO="Enter GitHub repository (format: owner/repo): "
+    goto :check_repo
+)
+
+REM Get the remote URL
+for /f "tokens=*" %%i in ('git remote get-url origin 2^>nul') do set REMOTE_URL=%%i
+
+if "%REMOTE_URL%"=="" (
+    for /f "tokens=*" %%i in ('git remote 2^>nul') do (
+        for /f "tokens=*" %%j in ('git remote get-url %%i 2^>nul') do set REMOTE_URL=%%j
+        goto :parse_url
+    )
+)
+
+:parse_url
+if "%REMOTE_URL%"=="" (
+    echo WARNING: Could not detect git remote URL.
+    set /p GITHUB_REPO="Enter GitHub repository (format: owner/repo): "
+    goto :check_repo
+)
+
+REM Parse GitHub repo from URL
+REM Handle: https://github.com/owner/repo.git or git@github.com:owner/repo.git
+
+REM Remove .git suffix if present
+set REMOTE_URL=%REMOTE_URL:.git=%
+
+REM Handle HTTPS URL: https://github.com/owner/repo
+echo %REMOTE_URL% | findstr /C:"https://github.com/" >nul
+if %ERRORLEVEL% EQU 0 (
+    set GITHUB_REPO=%REMOTE_URL:https://github.com/=%
+    goto :check_repo
+)
+
+REM Handle SSH URL: git@github.com:owner/repo
+echo %REMOTE_URL% | findstr /C:"git@github.com:" >nul
+if %ERRORLEVEL% EQU 0 (
+    set GITHUB_REPO=%REMOTE_URL:git@github.com:=%
+    goto :check_repo
+)
+
+REM Could not parse
+echo WARNING: Could not parse GitHub URL from: %REMOTE_URL%
+set /p GITHUB_REPO="Enter GitHub repository (format: owner/repo): "
+
+:check_repo
+if "%GITHUB_REPO%"=="" (
+    echo ERROR: GitHub repository is required. Exiting.
+    exit /b 1
+)
+
+REM ============================================================================
 REM SCRIPT START
 REM ============================================================================
 
+echo.
 echo ==============================================
 echo   GCP Cloud Run Setup for GitHub Actions
 echo   Healthcare Plans Application
@@ -45,7 +108,7 @@ echo.
 echo Configuration:
 echo   Project ID:   %PROJECT_ID%
 echo   Region:       %REGION%
-echo   GitHub Repo:  %GITHUB_REPO%
+echo   GitHub Repo:  %GITHUB_REPO% (auto-detected)
 echo.
 echo Press any key to continue or Ctrl+C to cancel...
 pause > nul
@@ -194,9 +257,9 @@ echo [Step 7/7] Service Account Key (Optional)
 set /p CREATE_KEY="Do you want to create a Service Account Key? (y/n): "
 if /i "%CREATE_KEY%"=="y" (
     set KEY_FILE=gcp-healthcare-sa-key.json
-    call gcloud iam service-accounts keys create %KEY_FILE% ^
+    call gcloud iam service-accounts keys create !KEY_FILE! ^
         --iam-account=%SERVICE_ACCOUNT_EMAIL%
-    echo SUCCESS: Service Account Key saved to: %KEY_FILE%
+    echo SUCCESS: Service Account Key saved to: !KEY_FILE!
     echo.
     echo WARNING: Keep this key secure and delete after adding to GitHub Secrets!
 )
@@ -213,13 +276,15 @@ echo.
 echo GitHub Secrets Configuration
 echo ----------------------------------------------
 echo Add these secrets to your GitHub repository:
-echo   Repository - Settings - Secrets and variables - Actions
+echo   https://github.com/%GITHUB_REPO%/settings/secrets/actions
 echo.
 echo SECRET NAME                        VALUE
 echo ----------------------------------------------
 echo GCP_PROJECT_ID                     %PROJECT_ID%
 echo GCP_SERVICE_ACCOUNT_EMAIL          %SERVICE_ACCOUNT_EMAIL%
-echo GCP_WORKLOAD_IDENTITY_PROVIDER     %WORKLOAD_IDENTITY_PROVIDER%
+echo.
+echo GCP_WORKLOAD_IDENTITY_PROVIDER:
+echo %WORKLOAD_IDENTITY_PROVIDER%
 echo.
 if /i "%CREATE_KEY%"=="y" (
     echo Alternative - Service Account Key:
