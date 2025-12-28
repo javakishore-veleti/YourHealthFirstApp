@@ -3,7 +3,7 @@ node_modules/
 npm-debug.log*
 
 # Build outputs (we rebuild in Docker)
-dist/
+# dist/
 .angular/
 
 # IDE and editor files
