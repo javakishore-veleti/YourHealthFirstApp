@@ -24,7 +24,7 @@ set -e  # Exit on any error
 # ============================================================================
 
 # Your GCP Project ID
-PROJECT_ID="your-gcp-project-id"
+PROJECT_ID="engineering-college-apps"
 
 # GCP Region for deployment
 REGION="us-central1"
