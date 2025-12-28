@@ -593,3 +593,297 @@ To view detailed logs:
 2. **Set up Custom Domain** - Configure custom domain in Cloud Run settings
 3. **Enable CI/CD** - Modify workflows to trigger on push to specific branches
 4. **Set up Monitoring** - Configure Cloud Monitoring alerts
+
+## "Your Health Plans" - Healthcare Insurance Plans Purchasing Website
+
+A full-stack web application that enables customers to search, compare, and purchase healthcare insurance plans online with a seamless shopping cart experience.
+
+**Tech Stack:** Python + Django REST Framework | Angular 17 + Bootstrap 5 | PostgreSQL/MySQL | Google Cloud Platform
+
+---
+
+## Table of Contents
+
+1. [Business Scenario](#part-1-business-scenario)
+2. [System Architecture Overview](#part-2-system-architecture-overview)
+3. [Requirements Analysis](#part-3-requirements-analysis)
+4. [Django Apps Structure](#part-4-django-apps-structure)
+5. [J2EE-Style Layered Architecture](#part-5-j2ee-style-layered-architecture)
+6. [Technology Stack](#part-6-technology-stack)
+7. [Entity Relationship Diagram](#part-7-entity-relationship-diagram)
+8. [API Endpoints Design](#part-8-api-endpoints-design)
+9. [Solution Architecture](#part-9-solution-architecture)
+10. [Chatbot & Workflow Architecture (Phase 2)](#part-10-chatbot--workflow-architecture-phase-2)
+11. [Getting Started](#part-11-getting-started)
+
+---
+
+## Part 1: Business Scenario
+
+### 1.1 CEO's Strategic Vision
+
+**From:** Rajesh Kumar, CEO - YourHealthFirst Insurance Ltd (a fictitious company)  
+**To:** Executive Leadership Team  
+**Subject:** Strategic Initiative Q1 2026 - Digital Transformation
+
+---
+
+*"Team,*
+
+*As we enter 2026, our healthcare insurance market is rapidly growing. Customers expect better website, and our competitors are already providing better healthcare plan purchasing experiences. To maintain our market leadership and  grow our business, I am announcing our top and immediate business priorities:*
+
+**Strategic Objectives:**
+
+1. **Growth** - Expand our customers by 40% through digital channels (web, mobile, partners, airport kiosks, and other marketplaces)
+
+2. **Customer Experience** - Provide 24/7 self-service for healthcare plan discovery and purchase
+
+3. **Operational Efficiency** - Reduce manual processing by automating customer signup and plan purchasing processes
+
+4. **Innovation** - Use AI/ML for customers personalized plan recommendations
+
+**Investment:** *I have secured board approval for a ₹100 Crores (approx. $10 million) budget for this digital initiative.*
+
+**Timeline:** *We need the first phase live within 2 months to capture the upcoming New Year season.*
+
+*I am asking our Business Leaders and Enterprise Architecture team to collaborate and define the product scope. Let's make this happen!*
+
+*- Rajesh Kumar, CEO"*
+
+---
+
+### 1.2 Business & Enterprise Architect Collaboration
+
+**Meeting Notes: Product Definition Workshop**  
+**Attendees:** Priya Sharma (VP Business), Venkat Rao (Enterprise Architect), Anita Reddy (Product Owner)
+
+---
+
+**Product Name:** **"Your Health Plans"**
+
+**Product Vision:**  
+A customer-facing website that allows individuals and families to search, compare, and purchase healthcare insurance plans online with a shopping cart experience.
+
+**Target Users:**
+
+| User Type | Description |
+|-----------|-------------|
+| **Customer** | Individuals/families looking to buy health insurance plans |
+| **Admin** |  "Your Health Plans" staff managing plans, orders, and customer queries |
+| **System** | Automated workflows for payment processing and notifications |
+
+**Core Capabilities Identified:**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    "YOUR HEALTH PLANS" PLATFORM                  │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  👤 CUSTOMER JOURNEY                                            │
+│  ─────────────────────────────────────────────────────────────  │
+│  [Browse Plans] → [Compare] → [Add to Cart] → [Checkout] → [Pay]│
+│                                                                 │
+│  🔐 ACCOUNT MANAGEMENT                                          │
+│  ─────────────────────────────────────────────────────────────  │
+│  [Sign Up] → [Login] → [View Profile] → [Order History]         │
+│                                                                 │
+│  🤖 AI ASSISTANT (Phase 2)                                      │
+│  ─────────────────────────────────────────────────────────────  │
+│  [Chat] → [Plan Recommendations] → [FAQ Answers]                │
+│                                                                 │
+│  🔧 ADMIN OPERATIONS                                            │
+│  ─────────────────────────────────────────────────────────────  │
+│  [Manage Plans] → [View Orders] → [Process Enrollments]         │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Phase 1 Scope (2 Months - ₹40 Cr):**
+- Customer signup/login
+- Plan catalog browsing
+- Shopping cart
+- Basic checkout with payment gateway
+- Admin plan management
+
+**Phase 2 Scope (Future):**
+- AI Chatbot for plan recommendations
+- Workflow automation for enrollment processing
+- Family plan management
+- Document upload for KYC
+
+---
+
+### 1.3 Business Requirements Document (BRD)
+
+**Prepared by:** Anita Reddy, Product Owner  
+**Version:** 1.0
+
+---
+
+#### Business Requirements - "Your Health Plans" Platform
+
+**Paragraph 1: Customer Experience Requirements**
+
+The platform shall enable customers to create an account using their email and mobile number, with secure password-based authentication. Once logged in, customers shall be able to browse the complete catalog of healthcare plans offered by HealthFirst, including Individual Plans, Family Floater Plans, and Senior Citizen Plans. Each plan listing shall display the plan name, coverage amount, premium (monthly/annual), key benefits, and waiting periods. Customers shall be able to add one or more plans to their shopping cart, review the cart contents, modify quantities or remove items, and proceed to checkout. The checkout process shall collect the customer's personal details and redirect to a secure payment gateway for processing. Upon successful payment, the system shall generate an order confirmation and send a confirmation email to the customer. Customers shall be able to view their order history and download policy documents from their account dashboard.
+
+**Paragraph 2: Admin and System Requirements**
+
+The platform shall provide an administrative interface for HealthFirst staff to manage the healthcare plan catalog, including the ability to add new plans, update pricing and benefits, activate or deactivate plans, and organize plans by category. Administrators shall have access to view all customer orders, update order status (processing, approved, policy issued), and handle cancellation requests. The system shall integrate with a payment gateway to process premium payments securely, with support for credit/debit cards and UPI. For Phase 2, the platform shall include an AI-powered chatbot that can answer frequently asked questions about plans, help customers compare plans based on their requirements (age, family size, budget), and guide them through the purchase process. The chatbot shall be built using workflow automation tools available on Google Cloud Platform to orchestrate conversations and integrate with the plan recommendation engine.
+
+---
+
+## Part 2: System Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                                         USERS                                            │
+├───────────────────────────────────────────┬─────────────────────────────────────────────┤
+│              👤 CUSTOMERS                  │              👨‍💼 ADMINS                       │
+│     (Individuals & Families)              │        (HealthFirst Staff)                  │
+└─────────────────────┬─────────────────────┴─────────────────────┬───────────────────────┘
+                      │                                           │
+                      ▼                                           ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                            FRONTEND LAYER (Angular 17 + Bootstrap 5)                     │
+├───────────────────────────────────────────┬─────────────────────────────────────────────┤
+│       📱 CUSTOMER PORTAL                   │         🖥️ ADMIN PORTAL                      │
+│       "yourhealthplans.com"               │         "admin.yourhealthplans.com"         │
+│       ───────────────────────             │         ───────────────────────             │
+│       • Plan Catalog & Search             │         • Plan Management (CRUD)            │
+│       • Plan Comparison                   │         • Order Management                  │
+│       • Shopping Cart                     │         • Customer Management               │
+│       • Checkout & Payment                │         • Reports & Dashboard               │
+│       • Order History                     │         • Chatbot Training                  │
+│       • Profile Management                │                                             │
+│       ───────────────────────             │         ───────────────────────             │
+│       🤖 AI Chat Widget (Phase 2)         │         Deployed: Cloud Run / Firebase      │
+│       Deployed: Cloud Run / Firebase      │                                             │
+└─────────────────────┬─────────────────────┴─────────────────────┬───────────────────────┘
+                      │                                           │
+                      │            HTTPS / REST API               │
+                      └─────────────────────┬─────────────────────┘
+                                            ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                              GCP LOAD BALANCER (Cloud Load Balancing)                    │
+└─────────────────────────────────────────────┬───────────────────────────────────────────┘
+                                              │
+          ┌───────────────┬───────────────────┼───────────────────┬───────────────────┐
+          ▼               ▼                   ▼                   ▼                   ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                    BACKEND MICROSERVICES (Django REST Framework)                         │
+│                                  Deployed on Cloud Run                                   │
+├─────────────┬─────────────┬─────────────┬─────────────┬─────────────┬───────────────────┤
+│  ACCOUNTS   │   CATALOG   │    CART     │   ORDERS    │  PAYMENTS   │    CHATBOT        │
+│  SERVICE    │   SERVICE   │   SERVICE   │   SERVICE   │   SERVICE   │    SERVICE        │
+│  ─────────  │  ─────────  │  ─────────  │  ─────────  │  ─────────  │   (Phase 2)       │
+│  • Signup   │  • Plans    │  • Add      │  • Create   │  • Initiate │  ─────────        │
+│  • Login    │  • Category │  • Update   │  • List     │  • Verify   │  • Dialogflow     │
+│  • Profile  │  • Search   │  • Remove   │  • Status   │  • Webhook  │  • Intents        │
+│  • JWT      │  • CRUD     │  • Clear    │  • History  │  • Refund   │  • Fulfillment    │
+├─────────────┴─────────────┴─────────────┴─────────────┴─────────────┴───────────────────┤
+│                              J2EE-STYLE LAYERED ARCHITECTURE                             │
+│         ┌────────────┐      ┌────────────┐      ┌────────────┐      ┌────────────┐      │
+│         │ API Layer  │  →   │  Service   │  →   │ DAO Layer  │  →   │   Models   │      │
+│         │ (views.py) │      │  Layer     │      │ (dao.py)   │      │(models.py) │      │
+│         └────────────┘      └────────────┘      └────────────┘      └────────────┘      │
+└─────────────────────────────────────────────┬───────────────────────────────────────────┘
+                                              │
+                      ┌───────────────────────┴───────────────────────┐
+                      ▼                                               ▼
+┌─────────────────────────────────────────────┐ ┌─────────────────────────────────────────┐
+│            DATABASE LAYER                    │ │          INTEGRATION LAYER               │
+│  ─────────────────────────────────────────  │ │  ─────────────────────────────────────  │
+│                                             │ │                                         │
+│  🐘 Cloud SQL (PostgreSQL 15)               │ │  💳 PAYMENT GATEWAY                     │
+│     ─────────────────────────               │ │     ─────────────────────               │
+│     Managed PostgreSQL on GCP               │ │     WireMock (Dev/Test)                 │
+│     • Auto backups                          │ │     Razorpay (Production)               │
+│     • High availability                     │ │     • UPI, Cards, NetBanking            │
+│                                             │ │     • Webhook notifications             │
+│     ─────────────────────────               │ │                                         │
+│     Tables:                                 │ │  🤖 AI & WORKFLOW (Phase 2)             │
+│     • users, profiles                       │ │     ─────────────────────               │
+│     • health_plans, categories              │ │     Dialogflow CX                       │
+│     • carts, cart_items                     │ │     • Conversation AI                   │
+│     • orders, order_items                   │ │     • Multi-turn dialogs                │
+│     • payments, transactions                │ │     Cloud Workflows                     │
+│                                             │ │     • Orchestration                     │
+│  Alternative: MySQL 8.0                     │ │     • Event-driven automation           │
+│                                             │ │     Cloud Functions                     │
+│                                             │ │     • Serverless compute                │
+└─────────────────────────────────────────────┘ └─────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                              DEVOPS & OBSERVABILITY                                      │
+├─────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                         │
+│   📂 GitHub                    🔄 CI/CD Pipeline              ☁️ GCP Services            │
+│   ─────────────               ─────────────────              ─────────────────          │
+│   • Source Code               GitHub Actions:                • Cloud Run                │
+│   • Pull Requests             • Lint & Test                  • Cloud SQL                │
+│   • Branch Protection         • Build Docker                 • Cloud Build              │
+│   • Code Reviews              • Push to Artifact Registry    • Artifact Registry        │
+│                               • Deploy to Cloud Run          • Secret Manager           │
+│                               • Run DB Migrations            • Cloud Logging            │
+│                               Cloud Build (Alternative):     • Cloud Monitoring         │
+│                               • Native GCP CI/CD             • Dialogflow CX            │
+│                               • Trigger on push              • Cloud Workflows          │
+│                                                                                         │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Part 3: Requirements Analysis
+
+### 3.1 Noun-Verb Analysis
+
+**Instructions:** Read the Business Requirements (Section 1.3) and identify:
+1. **NOUNS** = Things/Entities → These become Database Tables/Models
+2. **VERBS** = Actions → These become API Endpoints
+
+---
+
+#### NOUNS (→ Entities/Models)
+
+| Noun | Description | Django App |
+|------|-------------|------------|
+| **Customer/User** | Person buying health plans | `accounts` app |
+| **Admin** | HealthFirst staff member | `accounts` app |
+| **HealthPlan** | Insurance plan for sale | `catalog` app |
+| **Category** | Plan grouping (Individual, Family, Senior) | `catalog` app |
+| **Cart** | Shopping basket for a customer | `cart` app |
+| **CartItem** | Single plan entry in cart | `cart` app |
+| **Order** | Completed purchase/enrollment | `orders` app |
+| **OrderItem** | Single plan in an order | `orders` app |
+| **Payment** | Payment transaction record | `payments` app |
+| **PaymentGateway** | External payment service | Integration (WireMock) |
+| **Chatbot** | AI assistant (Phase 2) | `chatbot` app |
+
+#### VERBS (→ Actions/API Endpoints)
+
+| Verb | Entity | API Action | HTTP Method | App |
+|------|--------|------------|-------------|-----|
+| create account | User | Register new customer | POST | accounts |
+| log in | User | Authenticate | POST | accounts |
+| log out | User | End session | POST | accounts |
+| browse | HealthPlan | List all plans | GET | catalog |
+| search | HealthPlan | Search plans | GET | catalog |
+| view | HealthPlan | Get plan details | GET | catalog |
+| add | CartItem | Add plan to cart | POST | cart |
+| view | Cart | Get cart contents | GET | cart |
+| modify/update | CartItem | Change quantity | PATCH | cart |
+| remove | CartItem | Delete from cart | DELETE | cart |
+| checkout | Cart | Initiate checkout | POST | orders |
+| process | Payment | Process payment | POST | payments |
+| generate | Order | Create order after payment | POST | orders |
+| view | Order | Get order history | GET | orders |
+| download | Order | Get policy document | GET | orders |
+| add | HealthPlan | Create plan (admin) | POST | catalog |
+| update | HealthPlan | Update plan (admin) | PUT | catalog |
+| activate/deactivate | HealthPlan | Toggle plan status (admin) | PATCH | catalog |
+| update | Order | Change order status (admin) | PATCH | orders |
+| answer | Chatbot | Respond to FAQ (Phase 2) | POST | chatbot |
+| recommend | Chatbot | Suggest plans (Phase 2) | POST | chatbot |
+
+---
