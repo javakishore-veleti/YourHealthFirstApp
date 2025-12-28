@@ -1,0 +1,125 @@
+# GitHub Actions Workflow: Deploy Flask Healthcare Plans BO V2 to Cloud Run
+# Location: .github/workflows/gcp-healthcare-bo-v2-cloud-run-deploy.yml
+
+name: GCP Healthcare BO V2 - Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment Environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      region:
+        description: 'GCP Region'
+        required: true
+        default: 'us-central1'
+        type: choice
+        options:
+          - us-central1
+          - us-east1
+          - us-west1
+          - europe-west1
+          - asia-east1
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  SERVICE_NAME: healthcare-plans-bo-v2-${{ github.event.inputs.environment }}
+  REGION: ${{ github.event.inputs.region }}
+  IMAGE_NAME: healthcare-plans-bo-v2
+  ARTIFACT_REPO: healthcare-plans-bo
+
+jobs:
+  deploy:
+    name: Build and Deploy Flask BO V2 to Cloud Run
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Configure Docker for GCP Artifact Registry
+        run: |
+          gcloud auth configure-docker ${{ github.event.inputs.region }}-docker.pkg.dev --quiet
+
+      - name: Build Docker Image (V2)
+        working-directory: ./python_flask_back_office/healthcare_plans_bo
+        run: |
+          docker build \
+            -t ${{ github.event.inputs.region }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            -t ${{ github.event.inputs.region }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.IMAGE_NAME }}:latest \
+            -t ${{ github.event.inputs.region }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.IMAGE_NAME }}:${{ github.event.inputs.environment }} \
+            -f Dockerfile.v2 \
+            .
+
+      - name: Push Docker Image to Artifact Registry
+        run: |
+          docker push ${{ github.event.inputs.region }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          docker push ${{ github.event.inputs.region }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.IMAGE_NAME }}:latest
+          docker push ${{ github.event.inputs.region }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.IMAGE_NAME }}:${{ github.event.inputs.environment }}
+
+      - name: Deploy to Cloud Run
+        id: deploy
+        run: |
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image ${{ github.event.inputs.region }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            --platform managed \
+            --region ${{ github.event.inputs.region }} \
+            --allow-unauthenticated \
+            --port 8080 \
+            --memory 512Mi \
+            --cpu 1 \
+            --min-instances 0 \
+            --max-instances 10 \
+            --concurrency 80 \
+            --set-env-vars "FLASK_ENV=production" \
+            --set-env-vars "PORT=8080"
+
+      - name: Get Service URL
+        run: |
+          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --platform managed \
+            --region ${{ github.event.inputs.region }} \
+            --format 'value(status.url)')
+          echo "## 🚀 Deployment Successful!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Service:** ${{ env.SERVICE_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Region:** ${{ github.event.inputs.region }}" >> $GITHUB_STEP_SUMMARY
+          echo "**URL:** $SERVICE_URL" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### API Endpoints (V2)" >> $GITHUB_STEP_SUMMARY
+          echo "- Health: $SERVICE_URL/api/v2/health" >> $GITHUB_STEP_SUMMARY
+          echo "- Signup: $SERVICE_URL/api/v2/customers/signup" >> $GITHUB_STEP_SUMMARY
+          echo "- Login: $SERVICE_URL/api/v2/customers/login" >> $GITHUB_STEP_SUMMARY
+
+      - name: Verify Deployment
+        run: |
+          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --platform managed \
+            --region ${{ github.event.inputs.region }} \
+            --format 'value(status.url)')
+          
+          echo "Testing health endpoint..."
+          curl -s -o /dev/null -w "%{http_code}" "$SERVICE_URL/api/v2/health" | grep -q "200" && \
+            echo "✅ Health check passed!" || echo "⚠️ Health check returned non-200 status"

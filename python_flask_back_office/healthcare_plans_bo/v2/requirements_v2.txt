@@ -1,0 +1,21 @@
+# Flask Framework
+Flask>=3.0.0
+
+# Database
+Flask-SQLAlchemy>=3.1.0
+Flask-Migrate>=4.0.0
+
+# Authentication
+Flask-JWT-Extended>=4.6.0
+
+# CORS
+Flask-CORS>=4.0.0
+
+# Password Hashing
+Werkzeug>=3.0.0
+
+# Production Server
+gunicorn>=21.2.0
+
+# Environment Variables
+python-dotenv>=1.0.0

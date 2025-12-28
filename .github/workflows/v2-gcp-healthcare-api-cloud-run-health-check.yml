@@ -1,0 +1,211 @@
+# GitHub Actions Workflow: Health Check for Healthcare Plans API Cloud Run Service
+# Location: .github/workflows/gcp-healthcare-api-cloud-run-health-check.yml
+# Trigger: Manual (workflow_dispatch) or Scheduled
+
+name: GCP Healthcare API - Health Check
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to Check'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+          - all
+      region:
+        description: 'GCP Region'
+        required: true
+        default: 'us-central1'
+        type: choice
+        options:
+          - us-central1
+          - us-east1
+          - us-west1
+          - europe-west1
+          - asia-east1
+  
+  # Optional: Schedule health checks (uncomment to enable)
+  # schedule:
+  #   - cron: '*/30 * * * *'  # Every 30 minutes
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: ${{ github.event.inputs.region || 'us-central1' }}
+
+jobs:
+  health-check:
+    name: Check Flask API Service Health
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      id-token: write
+
+    strategy:
+      matrix:
+        environment: ${{ github.event.inputs.environment == 'all' && fromJSON('["dev", "staging", "prod"]') || fromJSON(format('["{0}"]', github.event.inputs.environment || 'dev')) }}
+      fail-fast: false
+
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Get Service Info
+        id: service
+        run: |
+          SERVICE_NAME="healthcare-plans-api-${{ matrix.environment }}"
+          echo "service_name=$SERVICE_NAME" >> $GITHUB_OUTPUT
+          
+          echo "📋 Fetching service info for $SERVICE_NAME..."
+          
+          if ! gcloud run services describe $SERVICE_NAME --region=${{ env.REGION }} --quiet 2>/dev/null; then
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "⚠️ Service $SERVICE_NAME does not exist"
+            exit 0
+          fi
+          
+          echo "exists=true" >> $GITHUB_OUTPUT
+          
+          SERVICE_URL=$(gcloud run services describe $SERVICE_NAME \
+            --region=${{ env.REGION }} \
+            --format='value(status.url)')
+          echo "url=$SERVICE_URL" >> $GITHUB_OUTPUT
+          
+          REVISION=$(gcloud run services describe $SERVICE_NAME \
+            --region=${{ env.REGION }} \
+            --format='value(status.latestReadyRevisionName)')
+          echo "revision=$REVISION" >> $GITHUB_OUTPUT
+
+      - name: Check HTTP Health
+        id: http_health
+        if: steps.service.outputs.exists == 'true'
+        run: |
+          SERVICE_URL="${{ steps.service.outputs.url }}"
+          
+          echo "🏥 Checking HTTP health for $SERVICE_URL..."
+          
+          # Check root endpoint
+          ROOT_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$SERVICE_URL/" --max-time 30 || echo "000")
+          echo "root_status=$ROOT_STATUS" >> $GITHUB_OUTPUT
+          
+          # Check health endpoint
+          HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$SERVICE_URL/api/v1/health/" --max-time 30 || echo "000")
+          echo "health_status=$HEALTH_STATUS" >> $GITHUB_OUTPUT
+          
+          # Get health response body
+          HEALTH_RESPONSE=$(curl -s "$SERVICE_URL/api/v1/health/" --max-time 30 || echo "{}")
+          echo "health_response=$HEALTH_RESPONSE" >> $GITHUB_OUTPUT
+          
+          # Measure response time
+          RESPONSE_TIME=$(curl -s -o /dev/null -w "%{time_total}" "$SERVICE_URL/api/v1/health/" --max-time 30 || echo "0")
+          echo "response_time=$RESPONSE_TIME" >> $GITHUB_OUTPUT
+          
+          # Determine overall health
+          if [ "$HEALTH_STATUS" = "200" ]; then
+            echo "healthy=true" >> $GITHUB_OUTPUT
+            echo "✅ Service is healthy"
+          else
+            echo "healthy=false" >> $GITHUB_OUTPUT
+            echo "❌ Service is unhealthy"
+          fi
+
+      - name: Test API Endpoints
+        id: api_test
+        if: steps.service.outputs.exists == 'true' && steps.http_health.outputs.healthy == 'true'
+        run: |
+          SERVICE_URL="${{ steps.service.outputs.url }}"
+          
+          echo "🔍 Testing API endpoints..."
+          
+          # Test accounts endpoint
+          ACCOUNTS_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$SERVICE_URL/api/v1/accounts/" --max-time 15 || echo "000")
+          echo "accounts_status=$ACCOUNTS_STATUS" >> $GITHUB_OUTPUT
+          
+          # Test catalog endpoint
+          CATALOG_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$SERVICE_URL/api/v1/catalog/" --max-time 15 || echo "000")
+          echo "catalog_status=$CATALOG_STATUS" >> $GITHUB_OUTPUT
+          
+          # Test cart endpoint
+          CART_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$SERVICE_URL/api/v1/cart/" --max-time 15 || echo "000")
+          echo "cart_status=$CART_STATUS" >> $GITHUB_OUTPUT
+
+      - name: Get Cloud Run Metrics
+        id: metrics
+        if: steps.service.outputs.exists == 'true'
+        run: |
+          SERVICE_NAME="${{ steps.service.outputs.service_name }}"
+          
+          MIN_INSTANCES=$(gcloud run services describe $SERVICE_NAME \
+            --region=${{ env.REGION }} \
+            --format='value(spec.template.metadata.annotations."autoscaling.knative.dev/minScale")' || echo "0")
+          echo "min_instances=${MIN_INSTANCES:-0}" >> $GITHUB_OUTPUT
+          
+          MAX_INSTANCES=$(gcloud run services describe $SERVICE_NAME \
+            --region=${{ env.REGION }} \
+            --format='value(spec.template.metadata.annotations."autoscaling.knative.dev/maxScale")' || echo "N/A")
+          echo "max_instances=${MAX_INSTANCES:-N/A}" >> $GITHUB_OUTPUT
+
+      - name: Health Check Summary
+        run: |
+          echo "## 🏥 Flask API Health Check: ${{ matrix.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ steps.service.outputs.exists }}" = "false" ]; then
+            echo "⚠️ **Service does not exist**" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+          
+          if [ "${{ steps.http_health.outputs.healthy }}" = "true" ]; then
+            echo "### ✅ Service is Healthy" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ❌ Service is Unhealthy" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### Service Info" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Service** | ${{ steps.service.outputs.service_name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **URL** | ${{ steps.service.outputs.url }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Region** | ${{ env.REGION }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Revision** | ${{ steps.service.outputs.revision }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Min/Max Instances** | ${{ steps.metrics.outputs.min_instances }} / ${{ steps.metrics.outputs.max_instances }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### HTTP Status" >> $GITHUB_STEP_SUMMARY
+          echo "| Endpoint | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Root (/)** | HTTP ${{ steps.http_health.outputs.root_status }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Health (/api/v1/health/)** | HTTP ${{ steps.http_health.outputs.health_status }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Response Time** | ${{ steps.http_health.outputs.response_time }}s |" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ steps.http_health.outputs.healthy }}" = "true" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "#### API Endpoints" >> $GITHUB_STEP_SUMMARY
+            echo "| Endpoint | Status |" >> $GITHUB_STEP_SUMMARY
+            echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
+            echo "| **/api/v1/accounts/** | HTTP ${{ steps.api_test.outputs.accounts_status }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| **/api/v1/catalog/** | HTTP ${{ steps.api_test.outputs.catalog_status }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| **/api/v1/cart/** | HTTP ${{ steps.api_test.outputs.cart_status }} |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Checked At:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+
+      - name: Fail if Unhealthy
+        if: steps.service.outputs.exists == 'true' && steps.http_health.outputs.healthy == 'false'
+        run: |
+          echo "❌ Service health check failed!"
+          exit 1

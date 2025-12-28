@@ -1,0 +1,102 @@
+# GitHub Actions Workflow: Destroy Flask Healthcare Plans BO V2 Service
+# Location: .github/workflows/gcp-healthcare-bo-v2-cloud-run-destroy.yml
+
+name: GCP Healthcare BO V2 - Destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment Environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      region:
+        description: 'GCP Region'
+        required: true
+        default: 'us-central1'
+        type: choice
+        options:
+          - us-central1
+          - us-east1
+          - us-west1
+          - europe-west1
+          - asia-east1
+      delete_images:
+        description: 'Also delete Docker images from Artifact Registry?'
+        required: true
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+env:
+  SERVICE_NAME: healthcare-plans-bo-v2-${{ github.event.inputs.environment }}
+  IMAGE_NAME: healthcare-plans-bo-v2
+  ARTIFACT_REPO: healthcare-plans-bo
+
+jobs:
+  destroy:
+    name: Destroy V2 Cloud Run Service
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Delete Cloud Run Service
+        run: |
+          echo "Deleting Cloud Run service: ${{ env.SERVICE_NAME }}..."
+          
+          gcloud run services delete ${{ env.SERVICE_NAME }} \
+            --platform managed \
+            --region ${{ github.event.inputs.region }} \
+            --quiet || echo "Service may not exist or already deleted"
+          
+          echo "✅ Service deleted"
+
+      - name: Delete Docker Images (Optional)
+        if: ${{ github.event.inputs.delete_images == 'true' }}
+        run: |
+          echo "Deleting Docker images from Artifact Registry..."
+          
+          # List and delete images
+          IMAGES=$(gcloud artifacts docker images list \
+            ${{ github.event.inputs.region }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }} \
+            --filter="package~${{ env.IMAGE_NAME }}" \
+            --format="value(package)" 2>/dev/null || echo "")
+          
+          if [ -n "$IMAGES" ]; then
+            for IMAGE in $IMAGES; do
+              echo "Deleting $IMAGE..."
+              gcloud artifacts docker images delete $IMAGE --quiet --delete-tags || true
+            done
+            echo "✅ Images deleted"
+          else
+            echo "No images found to delete"
+          fi
+
+      - name: Generate Report
+        run: |
+          echo "## 🗑️ Destroy Complete (V2)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Service:** ${{ env.SERVICE_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Region:** ${{ github.event.inputs.region }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Images Deleted:** ${{ github.event.inputs.delete_images }}" >> $GITHUB_STEP_SUMMARY

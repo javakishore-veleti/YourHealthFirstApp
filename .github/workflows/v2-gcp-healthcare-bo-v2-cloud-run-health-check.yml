@@ -1,0 +1,115 @@
+# GitHub Actions Workflow: Health Check for Flask Healthcare Plans BO V2
+# Location: .github/workflows/gcp-healthcare-bo-v2-cloud-run-health-check.yml
+
+name: GCP Healthcare BO V2 - Health Check
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment Environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      region:
+        description: 'GCP Region'
+        required: true
+        default: 'us-central1'
+        type: choice
+        options:
+          - us-central1
+          - us-east1
+          - us-west1
+          - europe-west1
+          - asia-east1
+
+env:
+  SERVICE_NAME: healthcare-plans-bo-v2-${{ github.event.inputs.environment }}
+
+jobs:
+  health-check:
+    name: Run Health Checks on V2 API
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Get Service URL
+        id: get-url
+        run: |
+          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --platform managed \
+            --region ${{ github.event.inputs.region }} \
+            --format 'value(status.url)' 2>/dev/null || echo "")
+          
+          if [ -z "$SERVICE_URL" ]; then
+            echo "❌ Service ${{ env.SERVICE_NAME }} not found in ${{ github.event.inputs.region }}"
+            exit 1
+          fi
+          
+          echo "SERVICE_URL=$SERVICE_URL" >> $GITHUB_OUTPUT
+          echo "Service URL: $SERVICE_URL"
+
+      - name: Health Check - Root Endpoint
+        run: |
+          echo "Testing root endpoint..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" "${{ steps.get-url.outputs.SERVICE_URL }}/api/v2/")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+          
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
+          
+          if [ "$HTTP_CODE" == "200" ]; then
+            echo "✅ Root endpoint check passed!"
+          else
+            echo "❌ Root endpoint check failed!"
+            exit 1
+          fi
+
+      - name: Health Check - Health Endpoint
+        run: |
+          echo "Testing health endpoint..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" "${{ steps.get-url.outputs.SERVICE_URL }}/api/v2/health")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+          
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
+          
+          if [ "$HTTP_CODE" == "200" ]; then
+            echo "✅ Health endpoint check passed!"
+          else
+            echo "❌ Health endpoint check failed!"
+            exit 1
+          fi
+
+      - name: Generate Report
+        if: always()
+        run: |
+          echo "## 🏥 Health Check Report (V2)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Service:** ${{ env.SERVICE_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Region:** ${{ github.event.inputs.region }}" >> $GITHUB_STEP_SUMMARY
+          echo "**URL:** ${{ steps.get-url.outputs.SERVICE_URL }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Endpoints Tested" >> $GITHUB_STEP_SUMMARY
+          echo "- /api/v2/ (Root)" >> $GITHUB_STEP_SUMMARY
+          echo "- /api/v2/health (Health)" >> $GITHUB_STEP_SUMMARY

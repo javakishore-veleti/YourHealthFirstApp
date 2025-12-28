@@ -1,0 +1,61 @@
+# Docker Compose for Local Development
+# Location: python_flask_back_office/healthcare_plans_bo/docker-compose.yml
+#
+# Usage:
+#   docker-compose up                    # Run both V1 and V2
+#   docker-compose up healthcare-bo-v1   # Run V1 only
+#   docker-compose up healthcare-bo-v2   # Run V2 only
+#   docker-compose up --build            # Rebuild and run
+#   docker-compose down                  # Stop all services
+
+version: '3.8'
+
+services:
+  # V1 - Original Flask API
+  healthcare-bo-v1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: healthcare-bo-v1
+    ports:
+      - "8080:8080"
+    environment:
+      - FLASK_ENV=development
+      - PORT=8080
+      - SECRET_KEY=dev-secret-key-v1
+      - JWT_SECRET_KEY=jwt-secret-key-v1
+    volumes:
+      - ./instance:/app/instance
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # V2 - New Modular Monolith Flask API
+  healthcare-bo-v2:
+    build:
+      context: .
+      dockerfile: Dockerfile.v2
+    container_name: healthcare-bo-v2
+    ports:
+      - "8081:8080"
+    environment:
+      - FLASK_ENV=development
+      - PORT=8080
+      - SECRET_KEY=dev-secret-key-v2
+      - JWT_SECRET_KEY=jwt-secret-key-v2
+    volumes:
+      - ./instance:/app/instance
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v2/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+# Networks
+networks:
+  default:
+    name: healthcare-network

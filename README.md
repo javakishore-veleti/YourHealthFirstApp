@@ -924,3 +924,68 @@ customer_profile/
     └── customer.py
 
 ```
+
+## V2 Folders and Content Notes
+
+### V2 Folder Structure
+
+```text
+python_flask_back_office/healthcare_plans_bo/
+├── Dockerfile          # Existing V1 Dockerfile (keep as is)
+├── Dockerfile.v2       # NEW - V2 Dockerfile
+├── docker-compose.yml  # NEW - Run V1 and/or V2 locally
+├── run_local.sh        # NEW - Developer script
+│
+└── v2/                 # NEW - V2 Module
+    ├── __init__.py
+    ├── config_v2.py
+    ├── extensions_v2.py
+    ├── main_v2.py
+    ├── run_v2.py
+    ├── requirements_v2.txt
+    │
+    ├── api/
+    │   └── health.py
+    │
+    └── customer_profile/    # Domain Module (DDD)
+        ├── api/
+        │   ├── signup_api.py
+        │   └── login_api.py
+        ├── dto/
+        │   ├── signup_dto.py
+        │   ├── login_dto.py
+        │   └── customer_response_dto.py
+        ├── service/
+        │   ├── customer_service.py       # Interface
+        │   ├── customer_service_factory.py
+        │   └── impl/
+        │       └── customer_service_impl.py
+        ├── dao/
+        │   ├── customer_dao.py           # Interface
+        │   ├── customer_dao_factory.py
+        │   └── impl/
+        │       └── customer_dao_impl.py
+        └── model/
+            └── customer.py
+```
+
+### V2  GitHub Workflows
+
+```text
+.github/workflows/
+├── gcp-healthcare-bo-v2-cloud-run-deploy.yml
+├── gcp-healthcare-bo-v2-cloud-run-health-check.yml
+└── gcp-healthcare-bo-v2-cloud-run-destroy.yml
+```
+
+### V1 and V2 Local Development
+
+```text
+./run_local.sh          # Interactive menu
+./run_local.sh v1       # Run V1 on port 8080
+./run_local.sh v2       # Run V2 on port 8081
+```
+
+###  API Endpoints
+
+VersionEndpointPortV1/api/v1/health/8080V2/api/v2/health8081V2/api/v2/customers/signup8081V2/api/v2/customers/login8081V2/api/v2/customers/me8081
