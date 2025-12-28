@@ -2,7 +2,7 @@
 # Location: .github/workflows/gcp-healthcare-api-cloud-run-status.yml
 # Trigger: Manual (workflow_dispatch)
 
-name: GCP Healthcare API - Status
+name: V2 GCP Healthcare API - Status
 
 on:
   workflow_dispatch:

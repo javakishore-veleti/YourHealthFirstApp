@@ -2,7 +2,7 @@
 # Location: .github/workflows/gcp-healthcare-api-cloud-run-stop.yml
 # Trigger: Manual (workflow_dispatch)
 
-name: GCP Healthcare API - Stop
+name: V2 GCP Healthcare API - Stop
 
 on:
   workflow_dispatch:

@@ -1,7 +1,7 @@
 # GitHub Actions Workflow: Health Check for Flask Healthcare Plans BO V2
 # Location: .github/workflows/gcp-healthcare-bo-v2-cloud-run-health-check.yml
 
-name: GCP Healthcare BO V2 - Health Check
+name: V2 GCP Healthcare BO V2 - Health Check
 
 on:
   workflow_dispatch:

@@ -1,7 +1,7 @@
 # GitHub Actions Workflow: Destroy Flask Healthcare Plans BO V2 Service
 # Location: .github/workflows/gcp-healthcare-bo-v2-cloud-run-destroy.yml
 
-name: GCP Healthcare BO V2 - Destroy
+name: V2 GCP Healthcare BO V2 - Destroy
 
 on:
   workflow_dispatch:

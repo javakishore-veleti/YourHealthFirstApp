@@ -2,7 +2,7 @@
 # Location: .github/workflows/gcp-healthcare-api-cloud-run-restart.yml
 # Trigger: Manual (workflow_dispatch)
 
-name: GCP Healthcare API - Restart
+name: V2 GCP Healthcare API - Restart
 
 on:
   workflow_dispatch:

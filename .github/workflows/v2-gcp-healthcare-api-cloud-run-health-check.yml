@@ -2,7 +2,7 @@
 # Location: .github/workflows/gcp-healthcare-api-cloud-run-health-check.yml
 # Trigger: Manual (workflow_dispatch) or Scheduled
 
-name: GCP Healthcare API - Health Check
+name: V2 GCP Healthcare API - Health Check
 
 on:
   workflow_dispatch:

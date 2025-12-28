@@ -3,7 +3,7 @@
 # Trigger: Manual (workflow_dispatch)
 # WARNING: This action is destructive and cannot be undone!
 
-name: GCP Healthcare API - Destroy
+name: V2 GCP Healthcare API - Destroy
 
 on:
   workflow_dispatch:

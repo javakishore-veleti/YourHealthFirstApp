@@ -2,7 +2,7 @@
 # Location: .github/workflows/gcp-healthcare-api-cloud-run-deploy.yml
 # Trigger: Manual (workflow_dispatch)
 
-name: GCP Healthcare API - Deploy
+name: V2 GCP Healthcare API - Deploy
 
 on:
   workflow_dispatch:

@@ -1,7 +1,7 @@
 # GitHub Actions Workflow: Deploy Flask Healthcare Plans BO V2 to Cloud Run
 # Location: .github/workflows/gcp-healthcare-bo-v2-cloud-run-deploy.yml
 
-name: GCP Healthcare BO V2 - Deploy
+name: V2 GCP Healthcare BO V2 - Deploy
 
 on:
   workflow_dispatch:
