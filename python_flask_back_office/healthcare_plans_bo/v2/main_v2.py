@@ -36,7 +36,17 @@ def create_app(config_name=None):
     
     # Create database tables
     with app.app_context():
-        db.create_all()
+        try:
+            from sqlalchemy import inspect
+            inspector = inspect(db.engine)
+            existing_tables = inspector.get_table_names()
+            if not existing_tables:
+                db.create_all()
+                print("✅ Database tables created")
+            else:
+                print(f"✅ Database tables already exist: {existing_tables}")
+        except Exception as e:
+            print(f"⚠️ Database initialization: {e}")
     
     return app
 
