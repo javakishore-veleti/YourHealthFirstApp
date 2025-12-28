@@ -1,0 +1,182 @@
+# GitHub Actions Workflow: Destroy Healthcare Plans UI Cloud Run Service
+# Location: .github/workflows/gcp-healthcare-ui-cloud-run-destroy.yml
+# Trigger: Manual (workflow_dispatch)
+# WARNING: This action is destructive and cannot be undone!
+
+name: GCP Healthcare UI - Destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to Destroy'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      region:
+        description: 'GCP Region'
+        required: true
+        default: 'us-central1'
+        type: choice
+        options:
+          - us-central1
+          - us-east1
+          - us-west1
+          - europe-west1
+          - asia-east1
+      delete_images:
+        description: 'Also delete container images?'
+        required: true
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      confirm_service_name:
+        description: 'Type the full service name to confirm (e.g., healthcare-plans-ui-dev)'
+        required: true
+        type: string
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  SERVICE_NAME: healthcare-plans-ui-${{ github.event.inputs.environment }}
+  REGION: ${{ github.event.inputs.region }}
+  IMAGE_NAME: healthcare-plans-ui
+
+jobs:
+  destroy:
+    name: Destroy Cloud Run Service
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Validate Confirmation
+        run: |
+          EXPECTED_NAME="healthcare-plans-ui-${{ github.event.inputs.environment }}"
+          PROVIDED_NAME="${{ github.event.inputs.confirm_service_name }}"
+          
+          if [ "$PROVIDED_NAME" != "$EXPECTED_NAME" ]; then
+            echo "❌ Confirmation failed!"
+            echo "Expected: $EXPECTED_NAME"
+            echo "Provided: $PROVIDED_NAME"
+            echo ""
+            echo "Please type the exact service name to confirm destruction."
+            exit 1
+          fi
+          
+          echo "✅ Confirmation validated"
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Check Service Exists
+        id: check
+        run: |
+          echo "🔍 Checking if service exists..."
+          
+          if gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --quiet 2>/dev/null; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            
+            # Get service URL for logging
+            URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+              --region=${{ env.REGION }} \
+              --format='value(status.url)')
+            echo "url=$URL" >> $GITHUB_OUTPUT
+            echo "📋 Found service: $URL"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "⚠️ Service ${{ env.SERVICE_NAME }} does not exist in ${{ env.REGION }}"
+          fi
+
+      - name: Delete Cloud Run Service
+        if: steps.check.outputs.exists == 'true'
+        run: |
+          echo "🗑️ Deleting Cloud Run service: ${{ env.SERVICE_NAME }}..."
+          
+          gcloud run services delete ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --quiet
+          
+          echo "✅ Service deleted successfully"
+
+      - name: Delete Container Images
+        if: github.event.inputs.delete_images == 'true'
+        run: |
+          echo "🗑️ Deleting container images..."
+          
+          REPO_PATH="${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.IMAGE_NAME }}/${{ env.SERVICE_NAME }}"
+          
+          # List and delete all images
+          IMAGES=$(gcloud artifacts docker images list $REPO_PATH --format='value(IMAGE)' 2>/dev/null || echo "")
+          
+          if [ -n "$IMAGES" ]; then
+            echo "Found images to delete:"
+            echo "$IMAGES"
+            
+            # Delete all tags/digests for this service
+            gcloud artifacts docker images delete "$REPO_PATH" \
+              --delete-tags \
+              --quiet 2>/dev/null || echo "⚠️ Some images may not have been deleted"
+            
+            echo "✅ Container images deleted"
+          else
+            echo "ℹ️ No container images found to delete"
+          fi
+
+      - name: List Remaining Revisions
+        continue-on-error: true
+        run: |
+          echo "📋 Checking for any remaining revisions..."
+          
+          REVISIONS=$(gcloud run revisions list \
+            --service=${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --format='value(REVISION)' 2>/dev/null || echo "")
+          
+          if [ -n "$REVISIONS" ]; then
+            echo "⚠️ Found orphaned revisions (these will be auto-cleaned):"
+            echo "$REVISIONS"
+          else
+            echo "✅ No orphaned revisions found"
+          fi
+
+      - name: Destruction Summary
+        run: |
+          echo "## 🗑️ Destruction Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ⚠️ Resources Destroyed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Resource | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Service** | ${{ env.SERVICE_NAME }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Environment** | ${{ github.event.inputs.environment }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Region** | ${{ env.REGION }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Previous URL** | ${{ steps.check.outputs.url || 'N/A' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Cloud Run Service** | ✅ Deleted |" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ github.event.inputs.delete_images }}" = "true" ]; then
+            echo "| **Container Images** | ✅ Deleted |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| **Container Images** | ⏭️ Retained |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "| **Destroyed At** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Destroyed By** | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "💡 To redeploy, run the **Deploy** workflow." >> $GITHUB_STEP_SUMMARY

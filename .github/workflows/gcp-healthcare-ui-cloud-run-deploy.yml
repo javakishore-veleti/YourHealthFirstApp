@@ -1,0 +1,112 @@
+# GitHub Actions Workflow: Deploy Angular Healthcare Plans UI to Google Cloud Run
+# Location: .github/workflows/gcp-healthcare-ui-cloud-run-deploy.yml
+# Trigger: Manual (workflow_dispatch)
+
+name: GCP Healthcare UI - Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment Environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      region:
+        description: 'GCP Region'
+        required: true
+        default: 'us-central1'
+        type: choice
+        options:
+          - us-central1
+          - us-east1
+          - us-west1
+          - europe-west1
+          - asia-east1
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  SERVICE_NAME: healthcare-plans-ui-${{ github.event.inputs.environment }}
+  REGION: ${{ github.event.inputs.region }}
+  IMAGE_NAME: healthcare-plans-ui
+
+jobs:
+  deploy:
+    name: Build and Deploy to Cloud Run
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      # Alternative: Service Account Key authentication
+      # - name: Authenticate to Google Cloud (Service Account Key)
+      #   uses: google-github-actions/auth@v2
+      #   with:
+      #     credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Configure Docker for GCP
+        run: |
+          gcloud auth configure-docker ${{ github.event.inputs.region }}-docker.pkg.dev --quiet
+
+      - name: Build Docker Image
+        working-directory: ./angular_front_end/healthcare_plans_ui
+        run: |
+          docker build \
+            -t ${{ github.event.inputs.region }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.IMAGE_NAME }}/${{ env.SERVICE_NAME }}:${{ github.sha }} \
+            -t ${{ github.event.inputs.region }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.IMAGE_NAME }}/${{ env.SERVICE_NAME }}:latest \
+            .
+
+      - name: Push Docker Image to Artifact Registry
+        run: |
+          docker push ${{ github.event.inputs.region }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.IMAGE_NAME }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
+          docker push ${{ github.event.inputs.region }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.IMAGE_NAME }}/${{ env.SERVICE_NAME }}:latest
+
+      - name: Deploy to Cloud Run
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE_NAME }}
+          region: ${{ github.event.inputs.region }}
+          image: ${{ github.event.inputs.region }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.IMAGE_NAME }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
+          flags: |
+            --platform=managed
+            --allow-unauthenticated
+            --port=8080
+            --memory=512Mi
+            --cpu=1
+            --min-instances=0
+            --max-instances=10
+            --concurrency=80
+
+      - name: Deployment Summary
+        run: |
+          echo "## 🚀 Deployment Successful!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Service URL** | ${{ steps.deploy.outputs.url }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Environment** | ${{ github.event.inputs.environment }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Region** | ${{ github.event.inputs.region }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Image Tag** | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Deployed At** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |" >> $GITHUB_STEP_SUMMARY

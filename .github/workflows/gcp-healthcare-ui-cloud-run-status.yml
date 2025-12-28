@@ -1,0 +1,144 @@
+# GitHub Actions Workflow: List/Status of all Healthcare Plans UI Cloud Run Services
+# Location: .github/workflows/gcp-healthcare-ui-cloud-run-status.yml
+# Trigger: Manual (workflow_dispatch)
+
+name: GCP Healthcare UI - Status
+
+on:
+  workflow_dispatch:
+    inputs:
+      region:
+        description: 'GCP Region'
+        required: true
+        default: 'us-central1'
+        type: choice
+        options:
+          - us-central1
+          - us-east1
+          - us-west1
+          - europe-west1
+          - asia-east1
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: ${{ github.event.inputs.region }}
+
+jobs:
+  status:
+    name: Get All Services Status
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: List All Healthcare UI Services
+        id: list
+        run: |
+          echo "📋 Fetching all Healthcare Plans UI services..."
+          echo ""
+          
+          # Get all services matching the pattern
+          SERVICES=$(gcloud run services list \
+            --region=${{ env.REGION }} \
+            --filter="metadata.name~^healthcare-plans-ui" \
+            --format='table(metadata.name,status.url,status.conditions[0].status,metadata.creationTimestamp)' \
+            2>/dev/null || echo "No services found")
+          
+          echo "$SERVICES"
+          echo ""
+          
+          # Save for summary
+          echo "services<<EOF" >> $GITHUB_OUTPUT
+          echo "$SERVICES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Get Detailed Status for Each Environment
+        run: |
+          echo "## 📊 Healthcare Plans UI - Service Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Region:** ${{ env.REGION }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Checked At:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          for ENV in dev staging prod; do
+            SERVICE_NAME="healthcare-plans-ui-$ENV"
+            
+            echo "### Environment: $ENV" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            if gcloud run services describe $SERVICE_NAME --region=${{ env.REGION }} --quiet 2>/dev/null; then
+              # Get service details
+              URL=$(gcloud run services describe $SERVICE_NAME --region=${{ env.REGION }} --format='value(status.url)')
+              REVISION=$(gcloud run services describe $SERVICE_NAME --region=${{ env.REGION }} --format='value(status.latestReadyRevisionName)')
+              CREATED=$(gcloud run services describe $SERVICE_NAME --region=${{ env.REGION }} --format='value(metadata.creationTimestamp)')
+              
+              MIN_INSTANCES=$(gcloud run services describe $SERVICE_NAME \
+                --region=${{ env.REGION }} \
+                --format='value(spec.template.metadata.annotations."autoscaling.knative.dev/minScale")' 2>/dev/null || echo "0")
+              
+              MAX_INSTANCES=$(gcloud run services describe $SERVICE_NAME \
+                --region=${{ env.REGION }} \
+                --format='value(spec.template.metadata.annotations."autoscaling.knative.dev/maxScale")' 2>/dev/null || echo "N/A")
+              
+              # Check health
+              HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL/health" --max-time 10 2>/dev/null || echo "000")
+              
+              if [ "$HTTP_STATUS" = "200" ]; then
+                HEALTH="✅ Healthy"
+              elif [ "${MAX_INSTANCES:-0}" = "0" ]; then
+                HEALTH="⏸️ Stopped"
+              else
+                HEALTH="⚠️ Unknown (HTTP $HTTP_STATUS)"
+              fi
+              
+              echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+              echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+              echo "| **Status** | $HEALTH |" >> $GITHUB_STEP_SUMMARY
+              echo "| **URL** | $URL |" >> $GITHUB_STEP_SUMMARY
+              echo "| **Revision** | $REVISION |" >> $GITHUB_STEP_SUMMARY
+              echo "| **Min/Max Instances** | ${MIN_INSTANCES:-0} / ${MAX_INSTANCES:-N/A} |" >> $GITHUB_STEP_SUMMARY
+              echo "| **Created** | $CREATED |" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "❌ **Not Deployed**" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+          
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Available Actions" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deploy** - Deploy or update a service" >> $GITHUB_STEP_SUMMARY
+          echo "- **Stop** - Scale service to 0 instances" >> $GITHUB_STEP_SUMMARY
+          echo "- **Restart** - Restart service with new instances" >> $GITHUB_STEP_SUMMARY
+          echo "- **Health Check** - Run health checks" >> $GITHUB_STEP_SUMMARY
+          echo "- **Destroy** - Delete service permanently" >> $GITHUB_STEP_SUMMARY
+
+      - name: List Container Images
+        run: |
+          echo ""
+          echo "📦 Container Images in Artifact Registry:"
+          echo ""
+          
+          REPO_PATH="${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/healthcare-plans-ui"
+          
+          gcloud artifacts docker images list $REPO_PATH \
+            --format='table(IMAGE,DIGEST,CREATE_TIME,UPDATE_TIME)' \
+            2>/dev/null || echo "No images found or repository doesn't exist"
