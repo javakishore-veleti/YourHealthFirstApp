@@ -1,0 +1,101 @@
+# GitHub Actions Workflow: Stop Healthcare Plans Back Office Cloud Run Service
+# Location: .github/workflows/gcp-healthcare-bo-cloud-run-stop.yml
+# Trigger: Manual (workflow_dispatch)
+
+name: GCP Healthcare BO - Stop
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to Stop'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      region:
+        description: 'GCP Region'
+        required: true
+        default: 'us-central1'
+        type: choice
+        options:
+          - us-central1
+          - us-east1
+          - us-west1
+          - europe-west1
+          - asia-east1
+      confirm:
+        description: 'Type "STOP" to confirm'
+        required: true
+        type: string
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  SERVICE_NAME: healthcare-plans-bo-${{ github.event.inputs.environment }}
+  REGION: ${{ github.event.inputs.region }}
+
+jobs:
+  stop:
+    name: Stop Flask Back Office Cloud Run Service
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Validate Confirmation
+        if: ${{ github.event.inputs.confirm != 'STOP' }}
+        run: |
+          echo "❌ Confirmation failed. Please type 'STOP' to confirm."
+          exit 1
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Check Service Exists
+        id: check
+        run: |
+          if gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --quiet 2>/dev/null; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "⚠️ Service ${{ env.SERVICE_NAME }} does not exist in ${{ env.REGION }}"
+          fi
+
+      - name: Stop Service (Scale to Zero)
+        if: steps.check.outputs.exists == 'true'
+        run: |
+          echo "🛑 Stopping service ${{ env.SERVICE_NAME }}..."
+          
+          gcloud run services update ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --max-instances=0 \
+            --quiet
+          
+          echo "✅ Service stopped (scaled to 0 instances)"
+
+      - name: Stop Summary
+        run: |
+          echo "## 🛑 Flask Back Office Service Stop Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Service** | ${{ env.SERVICE_NAME }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Environment** | ${{ github.event.inputs.environment }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Region** | ${{ env.REGION }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Status** | Stopped (max-instances=0) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Stopped At** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "💡 **Note:** To restart, use the **GCP Healthcare BO - Restart** workflow." >> $GITHUB_STEP_SUMMARY

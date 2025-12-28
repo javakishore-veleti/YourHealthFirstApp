@@ -1,0 +1,148 @@
+# GitHub Actions Workflow: Restart Healthcare Plans Back Office Cloud Run Service
+# Location: .github/workflows/gcp-healthcare-bo-cloud-run-restart.yml
+# Trigger: Manual (workflow_dispatch)
+
+name: GCP Healthcare BO - Restart
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to Restart'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      region:
+        description: 'GCP Region'
+        required: true
+        default: 'us-central1'
+        type: choice
+        options:
+          - us-central1
+          - us-east1
+          - us-west1
+          - europe-west1
+          - asia-east1
+      max_instances:
+        description: 'Maximum Instances'
+        required: true
+        default: '10'
+        type: choice
+        options:
+          - '5'
+          - '10'
+          - '25'
+          - '50'
+          - '100'
+      min_instances:
+        description: 'Minimum Instances (0 = scale to zero)'
+        required: true
+        default: '0'
+        type: choice
+        options:
+          - '0'
+          - '1'
+          - '2'
+          - '3'
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  SERVICE_NAME: healthcare-plans-bo-${{ github.event.inputs.environment }}
+  REGION: ${{ github.event.inputs.region }}
+
+jobs:
+  restart:
+    name: Restart Flask Back Office Cloud Run Service
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Check Service Exists
+        id: check
+        run: |
+          if gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --quiet 2>/dev/null; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            
+            URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+              --region=${{ env.REGION }} \
+              --format='value(status.url)')
+            echo "url=$URL" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "❌ Service ${{ env.SERVICE_NAME }} does not exist in ${{ env.REGION }}"
+            exit 1
+          fi
+
+      - name: Restart Service
+        if: steps.check.outputs.exists == 'true'
+        run: |
+          echo "🔄 Restarting service ${{ env.SERVICE_NAME }}..."
+          
+          gcloud run services update ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --min-instances=${{ github.event.inputs.min_instances }} \
+            --max-instances=${{ github.event.inputs.max_instances }} \
+            --quiet
+          
+          echo "✅ Service configuration updated"
+
+      - name: Force New Revision
+        if: steps.check.outputs.exists == 'true'
+        run: |
+          echo "🔄 Forcing new revision deployment..."
+          
+          gcloud run services update ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --update-labels=restarted-at=$(date +%s) \
+            --quiet
+          
+          echo "✅ New revision deployed"
+
+      - name: Verify Service Health
+        if: steps.check.outputs.exists == 'true'
+        run: |
+          echo "🏥 Checking service health..."
+          
+          SERVICE_URL="${{ steps.check.outputs.url }}"
+          sleep 15
+          
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${SERVICE_URL}/api/v1/health/" --max-time 30 || echo "000")
+          
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "✅ Service is healthy (HTTP $HTTP_STATUS)"
+          else
+            echo "⚠️ Health check returned HTTP $HTTP_STATUS (service may still be starting)"
+          fi
+
+      - name: Restart Summary
+        run: |
+          echo "## 🔄 Flask Back Office Service Restart Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Service** | ${{ env.SERVICE_NAME }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Service URL** | ${{ steps.check.outputs.url }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Health Endpoint** | ${{ steps.check.outputs.url }}/api/v1/health/ |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Environment** | ${{ github.event.inputs.environment }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Region** | ${{ env.REGION }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Min Instances** | ${{ github.event.inputs.min_instances }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Max Instances** | ${{ github.event.inputs.max_instances }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Restarted At** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |" >> $GITHUB_STEP_SUMMARY

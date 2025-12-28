@@ -1,5 +1,11 @@
 # YourHealthFirstApp
 
+## Prerequisites
+1. Google Cloud CLI https://docs.cloud.google.com/sdk/docs/install-sdk
+2. DockerHub https://hub.docker.com/welcome
+3. nodejs https://nodejs.org/en/download
+4. Python https://www.python.org/downloads/
+
 ## Branch 01 - Initial Folders and Angular Initialization Setup
 
 ### Branch Name: 01-Branch-Initial-Folders-Angular-SetUp
