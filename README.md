@@ -989,3 +989,105 @@ python_flask_back_office/healthcare_plans_bo/
 ###  API Endpoints
 
 VersionEndpointPortV1/api/v1/health/8080V2/api/v2/health8081V2/api/v2/customers/signup8081V2/api/v2/customers/login8081V2/api/v2/customers/me8081
+
+## V2 Angular Setup
+
+```shell
+
+cd angular_front_end/healthcare_plans_ui
+
+# Step 1: Create V2 Module with Routing
+ng generate module v2 --routing
+
+# Step 2: Create Core Module (Services, Guards, Interceptors)
+ng generate module v2/core
+
+# Step 3: Create Customer Profile Feature Module
+ng generate module v2/customer-profile --routing
+
+# Step 4: Create Services
+# Auth service in core
+ng generate service v2/core/services/auth
+
+# Customer service in customer-profile
+ng generate service v2/customer-profile/services/customer
+
+
+# Step 5: Create Guards
+ng generate guard v2/core/guards/auth --implements CanActivate
+
+# Step 6: Create Interceptor
+ng generate interceptor v2/core/interceptors/auth
+
+# Step 7: Create Components
+# Signup component
+ng generate component v2/customer-profile/components/signup
+
+# Login component
+ng generate component v2/customer-profile/components/login
+
+# Profile component (to view after login)
+ng generate component v2/customer-profile/components/profile
+
+# Step 8: Create Models/DTOs (manual files - Angular CLI doesn't have a generator for these)
+
+# Create directories
+mkdir -p src/app/v2/core/models
+mkdir -p src/app/v2/customer-profile/dto
+
+# Create empty files (we'll fill them with code)
+touch src/app/v2/core/models/customer.model.ts
+touch src/app/v2/customer-profile/dto/signup.dto.ts
+touch src/app/v2/customer-profile/dto/login.dto.ts
+
+# Step 9: Create Environment Config for API URL
+# Check if environments folder exists, if not create it
+mkdir -p src/environments
+
+
+```
+
+```text
+
+After running these commands, your folder structure will look like:
+
+src/app/v2/
+├── v2.module.ts
+├── v2-routing.module.ts
+├── core/
+│   ├── core.module.ts
+│   ├── services/
+│   │   └── auth.service.ts
+│   ├── guards/
+│   │   └── auth.guard.ts
+│   ├── interceptors/
+│   │   └── auth.interceptor.ts
+│   └── models/
+│       └── customer.model.ts
+└── customer-profile/
+    ├── customer-profile.module.ts
+    ├── customer-profile-routing.module.ts
+    ├── services/
+    │   └── customer.service.ts
+    ├── dto/
+    │   ├── signup.dto.ts
+    │   └── login.dto.ts
+    └── components/
+        ├── signup/
+        │   ├── signup.component.ts
+        │   ├── signup.component.html
+        │   ├── signup.component.css
+        │   └── signup.component.spec.ts
+        ├── login/
+        │   ├── login.component.ts
+        │   ├── login.component.html
+        │   ├── login.component.css
+        │   └── login.component.spec.ts
+        └── profile/
+            ├── profile.component.ts
+            ├── profile.component.html
+            ├── profile.component.css
+            └── profile.component.spec.ts
+
+```
+
