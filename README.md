@@ -69,6 +69,7 @@ touch main.py
 touch __init__.py
 touch config.py
 touch extensions.py
+touch run.py
 ### Macbook USERS ONLY COMMANDS END
 
 ### WINDOWS USERS ONLY COMMANDS START
@@ -79,6 +80,7 @@ if not exist main.py type nul > main.py
 if not exist __init__.py type nul > __init__.py
 if not exist config.py type nul > config.py
 if not exist extensions.py type nul > extensions.py
+if not exist run.py type nul > run.py
 ### WINDOWS USERS ONLY COMMANDS END
 
 ### Macbook USERS ONLY COMMANDS START
@@ -273,3 +275,31 @@ def create_app(config_name=None):
     return app
 
 ```
+
+### run.py file contents
+
+```text
+
+from main import create_app
+
+app = create_app()
+
+if __name__ == "__main__":
+    app.run(debug=True)
+
+
+```
+
+### pip install
+
+```shell
+pip install -r requirements.txt
+```
+
+### Run the Flask App For The First Time
+
+```shell
+python run.py
+```
+
+
