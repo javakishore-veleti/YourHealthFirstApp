@@ -118,6 +118,10 @@ python-dotenv==1.0.1
 
 # Utilities
 python-dateutil==2.9.0
+
+# Password Hashing (included with Werkzeug, but explicit)
+Werkzeug>=3.0.0
+
 EOF
 
 ### Macbook USERS ONLY COMMANDS END
