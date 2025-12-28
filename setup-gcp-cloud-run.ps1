@@ -11,7 +11,7 @@
 $CONFIG = @{
     ProjectId           = "engineering-college-apps"
     Region              = "us-central1"
-    ServiceAccountName  = "yourhealthplans-github-actions-cloudrun"
+    ServiceAccountName  = "yhp-github-cloudrun"
     PoolName            = "github-actions-pool"
     ProviderName        = "github-actions-provider"
     UIArtifactRepo      = "healthcare-plans-ui"

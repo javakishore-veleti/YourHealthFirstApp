@@ -13,7 +13,7 @@ REM ============================================================================
 
 set PROJECT_ID=engineering-college-apps
 set REGION=us-central1
-set SERVICE_ACCOUNT_NAME=yourhealthplans-github-actions-cloudrun
+set SERVICE_ACCOUNT_NAME=yhp-github-cloudrun
 set POOL_NAME=github-actions-pool
 set PROVIDER_NAME=github-actions-provider
 

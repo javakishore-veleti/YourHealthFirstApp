@@ -40,7 +40,8 @@ PROJECT_ID="engineering-college-apps"
 REGION="us-central1"
 
 # Service Account name (will be created)
-SERVICE_ACCOUNT_NAME="yourhealthplans-github-actions-cloudrun"
+# Note: GCP limits service account IDs to 6-30 characters
+SERVICE_ACCOUNT_NAME="yhp-github-cloudrun"
 
 # Artifact Registry repository names (two repos for one GitHub repo)
 # - UI repo: stores Angular Docker images
@@ -61,11 +62,13 @@ PROVIDER_NAME="github-actions-provider"
 detect_github_repo() {
     local remote_url=""
     
+    # Check if we're in a git repository
     if ! git rev-parse --is-inside-work-tree &>/dev/null; then
         echo ""
         return 1
     fi
     
+    # Try to get the remote URL (prefer origin)
     remote_url=$(git remote get-url origin 2>/dev/null || git remote get-url $(git remote | head -1) 2>/dev/null || echo "")
     
     if [[ -z "$remote_url" ]]; then
@@ -75,9 +78,15 @@ detect_github_repo() {
     
     local repo=""
     
-    if [[ "$remote_url" =~ github\.com[:/]([^/]+/[^/]+?)(\.git)?$ ]]; then
-        repo="${BASH_REMATCH[1]}"
-        repo="${repo%.git}"
+    # Remove .git suffix if present
+    remote_url="${remote_url%.git}"
+    
+    # Handle HTTPS URL: https://github.com/owner/repo
+    if [[ "$remote_url" == https://github.com/* ]]; then
+        repo="${remote_url#https://github.com/}"
+    # Handle SSH URL: git@github.com:owner/repo
+    elif [[ "$remote_url" == git@github.com:* ]]; then
+        repo="${remote_url#git@github.com:}"
     fi
     
     echo "$repo"
@@ -152,8 +161,8 @@ if gcloud iam service-accounts describe "$SERVICE_ACCOUNT_EMAIL" &>/dev/null; th
     echo "⚠️  Service Account already exists, skipping creation"
 else
     gcloud iam service-accounts create $SERVICE_ACCOUNT_NAME \
-        --display-name="YourHealthPlans GitHub Actions Cloud Run Deployer" \
-        --description="Service account for deploying Healthcare Plans UI and BO to Cloud Run from GitHub Actions"
+        --display-name="YourHealthPlans GitHub Actions Deployer" \
+        --description="Service account for deploying YourHealthFirstApp to Cloud Run from GitHub Actions"
     echo "✅ Service Account created: $SERVICE_ACCOUNT_EMAIL"
 fi
 
@@ -262,13 +271,39 @@ else
         --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.repository=assertion.repository,attribute.repository_owner=assertion.repository_owner" \
         --attribute-condition="assertion.repository=='${GITHUB_REPO}'"
     echo "  ✅ Workload Identity Provider created"
+    
+    # Wait for the provider to be fully available
+    echo "  ⏳ Waiting for provider to be ready..."
+    sleep 10
 fi
 
-# Get the Workload Identity Provider resource name
-WORKLOAD_IDENTITY_PROVIDER=$(gcloud iam workload-identity-pools providers describe $PROVIDER_NAME \
-    --workload-identity-pool=$POOL_NAME \
-    --location="global" \
-    --format="value(name)")
+# Get the Workload Identity Provider resource name (with retry)
+echo "  📋 Getting Workload Identity Provider resource name..."
+RETRY_COUNT=0
+MAX_RETRIES=5
+WORKLOAD_IDENTITY_PROVIDER=""
+
+while [[ -z "$WORKLOAD_IDENTITY_PROVIDER" && $RETRY_COUNT -lt $MAX_RETRIES ]]; do
+    WORKLOAD_IDENTITY_PROVIDER=$(gcloud iam workload-identity-pools providers describe $PROVIDER_NAME \
+        --workload-identity-pool=$POOL_NAME \
+        --location="global" \
+        --format="value(name)" 2>/dev/null || echo "")
+    
+    if [[ -z "$WORKLOAD_IDENTITY_PROVIDER" ]]; then
+        RETRY_COUNT=$((RETRY_COUNT + 1))
+        echo "  ⏳ Waiting for provider to be available (attempt $RETRY_COUNT/$MAX_RETRIES)..."
+        sleep 5
+    fi
+done
+
+if [[ -z "$WORKLOAD_IDENTITY_PROVIDER" ]]; then
+    echo "  ❌ Failed to get Workload Identity Provider after $MAX_RETRIES attempts"
+    echo "  You can manually get it later with:"
+    echo "    gcloud iam workload-identity-pools providers describe $PROVIDER_NAME --workload-identity-pool=$POOL_NAME --location=global --format='value(name)'"
+    exit 1
+fi
+
+echo "  ✅ Provider resource name retrieved"
 
 # Get Project Number
 PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format="value(projectNumber)")
