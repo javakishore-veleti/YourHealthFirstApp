@@ -3,19 +3,28 @@
 #############################################################################
 # GCP Setup Script for GitHub Actions Cloud Run Deployment
 # 
-# This script creates all necessary GCP resources:
+# This script creates all necessary GCP resources for deploying
+# BOTH Angular UI and Flask Back Office from a SINGLE GitHub repository:
+#
+# Repository Structure:
+#   YourHealthFirstApp/
+#   ├── angular_front_end/healthcare_plans_ui/   (Angular UI)
+#   └── python_flask_back_office/healthcare_plans_bo/  (Flask API)
+#
+# Resources Created:
 # 1. Service Account with required permissions
-# 2. Artifact Registry repository for Docker images
+# 2. TWO Artifact Registry repositories (one for UI, one for BO)
 # 3. Workload Identity Federation for secure GitHub authentication
+# 4. Optional: Service Account Key (JSON) for GitHub Secrets
 #
 # Prerequisites:
 #   - gcloud CLI installed and authenticated
 #   - Owner or Editor role on the GCP project
-#   - Run this script from within a git repository
+#   - Run this script from within the git repository
 #
 # Usage:
-#   chmod +x gcp-healthcare-cloud-run-setup.sh
-#   ./gcp-healthcare-cloud-run-setup.sh
+#   chmod +x setup-gcp-cloudrun.sh
+#   ./setup-gcp-cloudrun.sh
 #############################################################################
 
 set -e  # Exit on any error
@@ -31,9 +40,11 @@ PROJECT_ID="engineering-college-apps"
 REGION="us-central1"
 
 # Service Account name (will be created)
-SERVICE_ACCOUNT_NAME="github-actions-cloudrun"
+SERVICE_ACCOUNT_NAME="yourhealthplans-github-actions-cloudrun"
 
-# Artifact Registry repository names
+# Artifact Registry repository names (two repos for one GitHub repo)
+# - UI repo: stores Angular Docker images
+# - BO repo: stores Flask Docker images
 UI_ARTIFACT_REPO="healthcare-plans-ui"
 BO_ARTIFACT_REPO="healthcare-plans-bo"
 
@@ -64,17 +75,11 @@ detect_github_repo() {
         return 1
     fi
     
-    # Extract owner/repo from various URL formats:
-    # - https://github.com/owner/repo.git
-    # - https://github.com/owner/repo
-    # - git@github.com:owner/repo.git
-    # - git@github.com:owner/repo
-    
+    # Extract owner/repo from various URL formats
     local repo=""
     
     if [[ "$remote_url" =~ github\.com[:/]([^/]+/[^/]+?)(\.git)?$ ]]; then
         repo="${BASH_REMATCH[1]}"
-        # Remove .git suffix if present
         repo="${repo%.git}"
     fi
     
@@ -104,20 +109,32 @@ echo "=============================================="
 echo "GCP Cloud Run Setup for GitHub Actions"
 echo "=============================================="
 echo ""
-echo "Project ID:   $PROJECT_ID"
-echo "Region:       $REGION"
-echo "GitHub Repo:  $GITHUB_REPO (auto-detected)"
+echo "This will configure GCP for deploying BOTH:"
+echo "  • Angular UI (angular_front_end/healthcare_plans_ui)"
+echo "  • Flask BO (python_flask_back_office/healthcare_plans_bo)"
+echo ""
+echo "From a SINGLE GitHub repository."
+echo ""
+echo "Configuration:"
+echo "  Project ID:        $PROJECT_ID"
+echo "  Region:            $REGION"
+echo "  Service Account:   $SERVICE_ACCOUNT_NAME"
+echo "  GitHub Repo:       $GITHUB_REPO (auto-detected)"
+echo ""
+echo "Artifact Registries:"
+echo "  UI Images:         $UI_ARTIFACT_REPO"
+echo "  BO Images:         $BO_ARTIFACT_REPO"
 echo ""
 read -p "Press Enter to continue or Ctrl+C to cancel..."
 echo ""
 
 # Set the project
-echo "📌 Step 1/7: Setting GCP project..."
+echo "📌 Step 1/8: Setting GCP project..."
 gcloud config set project $PROJECT_ID
 
 # Enable required APIs
 echo ""
-echo "📌 Step 2/7: Enabling required GCP APIs..."
+echo "📌 Step 2/8: Enabling required GCP APIs..."
 gcloud services enable \
     cloudbuild.googleapis.com \
     run.googleapis.com \
@@ -130,21 +147,21 @@ echo "✅ APIs enabled successfully"
 
 # Create Service Account
 echo ""
-echo "📌 Step 3/7: Creating Service Account..."
+echo "📌 Step 3/8: Creating Service Account..."
 SERVICE_ACCOUNT_EMAIL="${SERVICE_ACCOUNT_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 
 if gcloud iam service-accounts describe "$SERVICE_ACCOUNT_EMAIL" &>/dev/null; then
     echo "⚠️  Service Account already exists, skipping creation"
 else
     gcloud iam service-accounts create $SERVICE_ACCOUNT_NAME \
-        --display-name="GitHub Actions Cloud Run Deployer" \
-        --description="Service account for deploying to Cloud Run from GitHub Actions"
-    echo "✅ Service Account created"
+        --display-name="YourHealthPlans GitHub Actions Cloud Run Deployer" \
+        --description="Service account for deploying Healthcare Plans UI and BO to Cloud Run from GitHub Actions"
+    echo "✅ Service Account created: $SERVICE_ACCOUNT_EMAIL"
 fi
 
 # Grant required IAM roles to the Service Account
 echo ""
-echo "📌 Step 4/7: Granting IAM roles to Service Account..."
+echo "📌 Step 4/8: Granting IAM roles to Service Account..."
 
 ROLES=(
     "roles/run.admin"
@@ -166,28 +183,30 @@ echo "✅ IAM roles granted"
 
 # Create Artifact Registry repositories
 echo ""
-echo "📌 Step 5/7: Creating Artifact Registry repositories..."
+echo "📌 Step 5/8: Creating Artifact Registry repositories..."
 
-# UI Repository
+# UI Repository (for Angular Docker images)
+echo "  Creating UI repository: $UI_ARTIFACT_REPO"
 if gcloud artifacts repositories describe $UI_ARTIFACT_REPO --location=$REGION &>/dev/null; then
-    echo "⚠️  Repository $UI_ARTIFACT_REPO already exists, skipping"
+    echo "  ⚠️  Repository $UI_ARTIFACT_REPO already exists, skipping"
 else
     gcloud artifacts repositories create $UI_ARTIFACT_REPO \
         --repository-format=docker \
         --location=$REGION \
         --description="Docker images for Healthcare Plans Angular UI"
-    echo "✅ Repository $UI_ARTIFACT_REPO created"
+    echo "  ✅ Repository $UI_ARTIFACT_REPO created"
 fi
 
-# BO Repository
+# BO Repository (for Flask Docker images)
+echo "  Creating BO repository: $BO_ARTIFACT_REPO"
 if gcloud artifacts repositories describe $BO_ARTIFACT_REPO --location=$REGION &>/dev/null; then
-    echo "⚠️  Repository $BO_ARTIFACT_REPO already exists, skipping"
+    echo "  ⚠️  Repository $BO_ARTIFACT_REPO already exists, skipping"
 else
     gcloud artifacts repositories create $BO_ARTIFACT_REPO \
         --repository-format=docker \
         --location=$REGION \
         --description="Docker images for Healthcare Plans Flask Back Office"
-    echo "✅ Repository $BO_ARTIFACT_REPO created"
+    echo "  ✅ Repository $BO_ARTIFACT_REPO created"
 fi
 
 # ============================================================================
@@ -195,7 +214,7 @@ fi
 # ============================================================================
 
 echo ""
-echo "📌 Step 6/7: Setting up Workload Identity Federation..."
+echo "📌 Step 6/8: Setting up Workload Identity Federation..."
 
 # Create Workload Identity Pool
 echo "  Creating Workload Identity Pool..."
@@ -245,19 +264,103 @@ gcloud iam service-accounts add-iam-policy-binding $SERVICE_ACCOUNT_EMAIL \
 echo "✅ Workload Identity Federation configured"
 
 # ============================================================================
-# OPTIONAL: CREATE SERVICE ACCOUNT KEY
+# CREATE SERVICE ACCOUNT KEY (JSON) FOR GITHUB SECRETS
 # ============================================================================
 
 echo ""
-echo "📌 Step 7/7: Service Account Key (Optional)"
-read -p "Do you want to create a Service Account Key? (y/n): " CREATE_KEY
+echo "📌 Step 7/8: Create Service Account Key (JSON)"
+echo ""
+echo "  You have two authentication options for GitHub Actions:"
+echo ""
+echo "  Option 1: Workload Identity Federation (More Secure - Recommended)"
+echo "            - No JSON key needed"
+echo "            - Uses OIDC tokens"
+echo "            - Already configured above"
+echo ""
+echo "  Option 2: Service Account Key (JSON)"
+echo "            - Download JSON key file"
+echo "            - Store entire JSON content in GitHub Secret: GCP_SA_KEY"
+echo "            - Simpler but less secure"
+echo ""
+read -p "Do you want to create/download a Service Account Key JSON? (y/n): " CREATE_KEY
+
 if [[ "$CREATE_KEY" == "y" || "$CREATE_KEY" == "Y" ]]; then
-    KEY_FILE="gcp-healthcare-sa-key.json"
-    gcloud iam service-accounts keys create $KEY_FILE \
+    KEY_FILE="${SERVICE_ACCOUNT_NAME}-key.json"
+    
+    echo ""
+    echo "📥 Creating and downloading Service Account Key..."
+    gcloud iam service-accounts keys create "$KEY_FILE" \
         --iam-account=$SERVICE_ACCOUNT_EMAIL
+    
+    echo ""
     echo "✅ Service Account Key saved to: $KEY_FILE"
     echo ""
-    echo "⚠️  SECURITY WARNING: Keep this key secure and delete after adding to GitHub Secrets!"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "📋 HOW TO ADD JSON KEY TO GITHUB SECRETS:"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "  1. Open the file: $KEY_FILE"
+    echo ""
+    echo "  2. Copy the ENTIRE contents (including curly braces)"
+    echo ""
+    echo "  3. Go to GitHub repository secrets:"
+    echo "     https://github.com/${GITHUB_REPO}/settings/secrets/actions"
+    echo ""
+    echo "  4. Click 'New repository secret'"
+    echo ""
+    echo "  5. Name: GCP_SA_KEY"
+    echo "     Value: Paste the entire JSON content"
+    echo ""
+    echo "  6. Click 'Add secret'"
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "⚠️  SECURITY WARNINGS:"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  • DELETE the local JSON file after adding to GitHub Secrets!"
+    echo "  • NEVER commit this file to your repository!"
+    echo "  • Add '$KEY_FILE' to your .gitignore file!"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    
+    # Show preview of JSON file
+    echo "📄 Preview of $KEY_FILE (first 5 lines):"
+    echo "---"
+    head -5 "$KEY_FILE"
+    echo "..."
+    echo "---"
+fi
+
+# ============================================================================
+# UPDATE .gitignore
+# ============================================================================
+
+echo ""
+echo "📌 Step 8/8: Updating .gitignore..."
+
+GITIGNORE_ENTRIES=(
+    "# GCP Service Account Keys - NEVER COMMIT THESE"
+    "*-key.json"
+    "*.json.key"
+    "gcp-*.json"
+    "*-sa-key.json"
+)
+
+if [[ -f ".gitignore" ]]; then
+    # Check if already has the entry
+    if ! grep -q "\*-key.json" .gitignore; then
+        echo "" >> .gitignore
+        for entry in "${GITIGNORE_ENTRIES[@]}"; do
+            echo "$entry" >> .gitignore
+        done
+        echo "✅ Added GCP key patterns to .gitignore"
+    else
+        echo "⚠️  .gitignore already contains key patterns"
+    fi
+else
+    for entry in "${GITIGNORE_ENTRIES[@]}"; do
+        echo "$entry" >> .gitignore
+    done
+    echo "✅ Created .gitignore with GCP key patterns"
 fi
 
 # ============================================================================
@@ -275,31 +378,38 @@ echo ""
 echo "Add these secrets to your GitHub repository:"
 echo "  https://github.com/${GITHUB_REPO}/settings/secrets/actions"
 echo ""
-echo "┌────────────────────────────────────┬────────────────────────────────────────────┐"
-echo "│ Secret Name                        │ Value                                      │"
-echo "├────────────────────────────────────┼────────────────────────────────────────────┤"
-printf "│ %-34s │ %-42s │\n" "GCP_PROJECT_ID" "$PROJECT_ID"
-printf "│ %-34s │ %-42s │\n" "GCP_SERVICE_ACCOUNT_EMAIL" "$SERVICE_ACCOUNT_EMAIL"
-echo "├────────────────────────────────────┼────────────────────────────────────────────┤"
-echo "│ GCP_WORKLOAD_IDENTITY_PROVIDER     │ (see below - too long for table)           │"
-echo "└────────────────────────────────────┴────────────────────────────────────────────┘"
-echo ""
-echo "GCP_WORKLOAD_IDENTITY_PROVIDER value:"
-echo "$WORKLOAD_IDENTITY_PROVIDER"
+echo "┌─────────────────────────────────────────────────────────────────────┐"
+echo "│ OPTION 1: Workload Identity Federation (Recommended)               │"
+echo "├─────────────────────────────────────────────────────────────────────┤"
+echo "│ GCP_PROJECT_ID                                                     │"
+echo "│ $PROJECT_ID"
+echo "│                                                                     │"
+echo "│ GCP_SERVICE_ACCOUNT_EMAIL                                          │"
+echo "│ $SERVICE_ACCOUNT_EMAIL"
+echo "│                                                                     │"
+echo "│ GCP_WORKLOAD_IDENTITY_PROVIDER                                     │"
+echo "│ $WORKLOAD_IDENTITY_PROVIDER"
+echo "└─────────────────────────────────────────────────────────────────────┘"
 echo ""
 
 if [[ "$CREATE_KEY" == "y" || "$CREATE_KEY" == "Y" ]]; then
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "Alternative: Service Account Key"
-    echo ""
-    echo "┌────────────────────────────────────┬────────────────────────────────────────────┐"
-    printf "│ %-34s │ %-42s │\n" "GCP_SA_KEY" "Contents of $KEY_FILE"
-    echo "└────────────────────────────────────┴────────────────────────────────────────────┘"
+    echo "┌─────────────────────────────────────────────────────────────────────┐"
+    echo "│ OPTION 2: Service Account Key (Alternative)                        │"
+    echo "├─────────────────────────────────────────────────────────────────────┤"
+    echo "│ GCP_PROJECT_ID                                                     │"
+    echo "│ $PROJECT_ID"
+    echo "│                                                                     │"
+    echo "│ GCP_SA_KEY                                                         │"
+    echo "│ <Entire contents of $KEY_FILE>"
+    echo "└─────────────────────────────────────────────────────────────────────┘"
     echo ""
 fi
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "🔗 Useful Links"
+echo ""
+echo "  GitHub Secrets:"
+echo "    https://github.com/${GITHUB_REPO}/settings/secrets/actions"
 echo ""
 echo "  Artifact Registry (UI):"
 echo "    ${REGION}-docker.pkg.dev/${PROJECT_ID}/${UI_ARTIFACT_REPO}"
@@ -314,3 +424,10 @@ echo "  GitHub Actions:"
 echo "    https://github.com/${GITHUB_REPO}/actions"
 echo ""
 echo "=============================================="
+
+if [[ "$CREATE_KEY" == "y" || "$CREATE_KEY" == "Y" ]]; then
+    echo ""
+    echo "🔐 REMINDER: Delete the local key file after adding to GitHub!"
+    echo "   rm $KEY_FILE"
+    echo ""
+fi
