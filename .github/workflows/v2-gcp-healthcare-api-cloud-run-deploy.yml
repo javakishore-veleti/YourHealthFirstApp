@@ -1,5 +1,5 @@
-# GitHub Actions Workflow: Deploy Flask Healthcare Plans API to Google Cloud Run
-# Location: .github/workflows/gcp-healthcare-api-cloud-run-deploy.yml
+# GitHub Actions Workflow: Deploy Flask Healthcare Plans API V2 to Google Cloud Run
+# Location: .github/workflows/v2-gcp-healthcare-api-cloud-run-deploy.yml
 # Trigger: Manual (workflow_dispatch)
 
 name: V2 GCP Healthcare API - Deploy
@@ -30,13 +30,14 @@ on:
 
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-  SERVICE_NAME: healthcare-plans-bo-${{ github.event.inputs.environment }}
+  SERVICE_NAME: healthcare-plans-bo-v2-${{ github.event.inputs.environment }}
   REGION: ${{ github.event.inputs.region }}
-  IMAGE_NAME: healthcare-plans-bo
+  IMAGE_NAME: healthcare-plans-bo-v2
+  ARTIFACT_REPO: healthcare-plans-bo
 
 jobs:
   deploy:
-    name: Build and Deploy Flask API to Cloud Run
+    name: Build and Deploy Flask API V2 to Cloud Run
     runs-on: ubuntu-latest
     
     permissions:
@@ -51,36 +52,32 @@ jobs:
         id: auth
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
-
-      # Alternative: Service Account Key authentication
-      # - name: Authenticate to Google Cloud (Service Account Key)
-      #   uses: google-github-actions/auth@v2
-      #   with:
-      #     credentials_json: ${{ secrets.GCP_SA_KEY }}
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
 
-      - name: Configure Docker for GCP
+      - name: Configure Docker for GCP Artifact Registry
         run: |
           gcloud auth configure-docker ${{ github.event.inputs.region }}-docker.pkg.dev --quiet
 
-      - name: Build Docker Image
+      - name: Build Docker Image (V2)
         working-directory: ./python_flask_back_office/healthcare_plans_bo
         run: |
           docker build \
-            -t ${{ github.event.inputs.region }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.IMAGE_NAME }}/${{ env.SERVICE_NAME }}:${{ github.sha }} \
-            -t ${{ github.event.inputs.region }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.IMAGE_NAME }}/${{ env.SERVICE_NAME }}:latest \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.IMAGE_NAME }}:latest \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.IMAGE_NAME }}:${{ github.event.inputs.environment }} \
+            -f Dockerfile.v2 \
             .
 
       - name: Push Docker Image to Artifact Registry
         run: |
-          docker push ${{ github.event.inputs.region }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.IMAGE_NAME }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
-          docker push ${{ github.event.inputs.region }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.IMAGE_NAME }}/${{ env.SERVICE_NAME }}:latest
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.IMAGE_NAME }}:latest
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.IMAGE_NAME }}:${{ github.event.inputs.environment }}
 
       - name: Deploy to Cloud Run
         id: deploy
@@ -88,7 +85,7 @@ jobs:
         with:
           service: ${{ env.SERVICE_NAME }}
           region: ${{ github.event.inputs.region }}
-          image: ${{ github.event.inputs.region }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.IMAGE_NAME }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
           flags: |
             --platform=managed
             --allow-unauthenticated
@@ -100,36 +97,40 @@ jobs:
             --concurrency=80
             --timeout=300
           env_vars: |
-            FLASK_ENV=${{ github.event.inputs.environment == 'prod' && 'production' || 'development' }}
+            FLASK_ENV=production
+            PORT=8080
 
       - name: Verify Deployment
         run: |
-          echo "🔍 Verifying deployment..."
+          echo "🔍 Verifying V2 deployment..."
           sleep 10
           
           SERVICE_URL="${{ steps.deploy.outputs.url }}"
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$SERVICE_URL/api/v1/health/" --max-time 30 || echo "000")
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$SERVICE_URL/api/v2/health" --max-time 30 || echo "000")
           
           if [ "$HTTP_STATUS" = "200" ]; then
-            echo "✅ Health check passed (HTTP $HTTP_STATUS)"
+            echo "✅ V2 Health check passed (HTTP $HTTP_STATUS)"
           else
-            echo "⚠️ Health check returned HTTP $HTTP_STATUS"
+            echo "⚠️ V2 Health check returned HTTP $HTTP_STATUS"
           fi
 
       - name: Deployment Summary
         run: |
-          echo "## 🚀 Flask API Deployment Successful!" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 Flask API V2 Deployment Successful!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| **Service URL** | ${{ steps.deploy.outputs.url }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Health Endpoint** | ${{ steps.deploy.outputs.url }}/api/v1/health/ |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Service Name** | ${{ env.SERVICE_NAME }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Health Endpoint** | ${{ steps.deploy.outputs.url }}/api/v2/health |" >> $GITHUB_STEP_SUMMARY
           echo "| **Environment** | ${{ github.event.inputs.environment }} |" >> $GITHUB_STEP_SUMMARY
           echo "| **Region** | ${{ github.event.inputs.region }} |" >> $GITHUB_STEP_SUMMARY
           echo "| **Image Tag** | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
           echo "| **Deployed At** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### API Endpoints" >> $GITHUB_STEP_SUMMARY
-          echo "- **Accounts**: ${{ steps.deploy.outputs.url }}/api/v1/accounts/" >> $GITHUB_STEP_SUMMARY
-          echo "- **Catalog**: ${{ steps.deploy.outputs.url }}/api/v1/catalog/" >> $GITHUB_STEP_SUMMARY
-          echo "- **Cart**: ${{ steps.deploy.outputs.url }}/api/v1/cart/" >> $GITHUB_STEP_SUMMARY
+          echo "### V2 API Endpoints" >> $GITHUB_STEP_SUMMARY
+          echo "- **Health**: ${{ steps.deploy.outputs.url }}/api/v2/health" >> $GITHUB_STEP_SUMMARY
+          echo "- **Signup**: ${{ steps.deploy.outputs.url }}/api/v2/customers/signup" >> $GITHUB_STEP_SUMMARY
+          echo "- **Login**: ${{ steps.deploy.outputs.url }}/api/v2/customers/login" >> $GITHUB_STEP_SUMMARY
+          echo "- **Profile**: ${{ steps.deploy.outputs.url }}/api/v2/customers/me" >> $GITHUB_STEP_SUMMARY
+          echo "- **Refresh Token**: ${{ steps.deploy.outputs.url }}/api/v2/customers/refresh" >> $GITHUB_STEP_SUMMARY
