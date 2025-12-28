@@ -30,9 +30,9 @@ on:
 
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-  SERVICE_NAME: healthcare-plans-api-${{ github.event.inputs.environment }}
+  SERVICE_NAME: healthcare-plans-bo-${{ github.event.inputs.environment }}
   REGION: ${{ github.event.inputs.region }}
-  IMAGE_NAME: healthcare-plans-api
+  IMAGE_NAME: healthcare-plans-bo
 
 jobs:
   deploy:
