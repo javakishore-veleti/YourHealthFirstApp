@@ -1,30 +1,7 @@
 <#
 .SYNOPSIS
     GCP Setup Script for GitHub Actions Cloud Run Deployment (PowerShell)
-
-.DESCRIPTION
-    This script creates all necessary GCP resources for deploying
-    BOTH Angular UI and Flask Back Office from a SINGLE GitHub repository:
-
-    Repository Structure:
-      YourHealthFirstApp/
-      ├── angular_front_end/healthcare_plans_ui/   (Angular UI)
-      └── python_flask_back_office/healthcare_plans_bo/  (Flask API)
-
-    Resources Created:
-    1. Service Account with required permissions
-    2. TWO Artifact Registry repositories (one for UI, one for BO)
-    3. Workload Identity Federation for secure GitHub authentication
-    4. Optional: Service Account Key (JSON) for GitHub Secrets
-
-.PREREQUISITES
-    - gcloud CLI installed and in PATH
-    - git installed and in PATH
-    - Run: gcloud auth login
-    - Owner or Editor role on the GCP project
-
-.USAGE
-    .\setup-gcp-cloud-run.ps1
+    With Comprehensive IAM Roles including Cloud SQL, Secret Manager, etc.
 #>
 
 # ============================================================================
@@ -71,25 +48,20 @@ function Test-GCloudCommand {
         $null = Invoke-Expression "$Command 2>&1"
         return $LASTEXITCODE -eq 0
     }
-    catch {
-        return $false
-    }
+    catch { return $false }
 }
 
 function Invoke-GCloud {
     param([string]$Command, [switch]$Silent)
-    
     if ($Silent) {
         $result = Invoke-Expression "$Command 2>&1"
     }
     else {
         Invoke-Expression $Command
     }
-    
     if ($LASTEXITCODE -ne 0) {
         throw "gcloud command failed: $Command"
     }
-    
     return $result
 }
 
@@ -126,7 +98,6 @@ function Get-GitHubRepoFromRemote {
     }
     
     if ($repo) { $repo = $repo -replace '\.git$', '' }
-    
     return $repo
 }
 
@@ -141,7 +112,6 @@ $GitHubRepo = Get-GitHubRepoFromRemote
 if (-not $GitHubRepo) {
     Write-Warn "Could not auto-detect GitHub repository."
     $GitHubRepo = Read-Host "Enter GitHub repository (format: owner/repo)"
-    
     if (-not $GitHubRepo) {
         Write-Err "GitHub repository is required. Exiting."
         exit 1
@@ -158,23 +128,14 @@ Write-Host @"
 
 ==============================================
   GCP Cloud Run Setup for GitHub Actions
+  (With Comprehensive IAM Roles)
 ==============================================
-
-This will configure GCP for deploying BOTH:
-  * Angular UI (angular_front_end/healthcare_plans_ui)
-  * Flask BO (python_flask_back_office/healthcare_plans_bo)
-
-From a SINGLE GitHub repository.
 
 Configuration:
   Project ID:        $($CONFIG.ProjectId)
   Region:            $($CONFIG.Region)
   Service Account:   $($CONFIG.ServiceAccountName)
   GitHub Repo:       $GitHubRepo (auto-detected)
-
-Artifact Registries:
-  UI Images:         $($CONFIG.UIArtifactRepo)
-  BO Images:         $($CONFIG.BOArtifactRepo)
 
 "@ -ForegroundColor White
 
@@ -195,6 +156,8 @@ try {
         "iamcredentials.googleapis.com"
         "iam.googleapis.com"
         "cloudresourcemanager.googleapis.com"
+        "sqladmin.googleapis.com"
+        "secretmanager.googleapis.com"
     )
     $apiList = $apis -join " "
     Invoke-GCloud "gcloud services enable $apiList"
@@ -210,31 +173,38 @@ try {
         Write-Warn "Service Account already exists, skipping creation"
     }
     else {
-        Invoke-GCloud "gcloud iam service-accounts create $($CONFIG.ServiceAccountName) --display-name=`"YourHealthPlans GitHub Actions Cloud Run Deployer`" --description=`"Service account for deploying Healthcare Plans UI and BO to Cloud Run`""
+        Invoke-GCloud "gcloud iam service-accounts create $($CONFIG.ServiceAccountName) --display-name=`"YourHealthPlans GitHub Actions Cloud Run Deployer`" --description=`"Service account for deploying Healthcare Plans to Cloud Run`""
         Write-Success "Service Account created: $serviceAccountEmail"
     }
 
-    # Step 4: Grant IAM Roles
+    # Step 4: Grant Comprehensive IAM Roles
     Write-Step "Step 4/8" "Granting IAM roles to Service Account..."
+    Write-Host "`n  Assigning comprehensive roles for Cloud Run, Artifact Registry," -ForegroundColor Gray
+    Write-Host "  Cloud SQL, Secret Manager, and Storage...`n" -ForegroundColor Gray
+    
+    # Comprehensive roles matching your working configuration
     $roles = @(
-        "roles/run.admin"
-        "roles/artifactregistry.writer"
-        "roles/artifactregistry.reader"
-        "roles/iam.serviceAccountUser"
-        "roles/storage.admin"
+        @{ Role = "roles/artifactregistry.admin"; Desc = "Artifact Registry Administrator" }
+        @{ Role = "roles/artifactregistry.writer"; Desc = "Artifact Registry Writer" }
+        @{ Role = "roles/run.admin"; Desc = "Cloud Run Admin" }
+        @{ Role = "roles/cloudsql.admin"; Desc = "Cloud SQL Admin" }
+        @{ Role = "roles/cloudsql.client"; Desc = "Cloud SQL Client" }
+        @{ Role = "roles/secretmanager.admin"; Desc = "Secret Manager Admin" }
+        @{ Role = "roles/secretmanager.secretAccessor"; Desc = "Secret Manager Secret Accessor" }
+        @{ Role = "roles/iam.serviceAccountUser"; Desc = "Service Account User" }
+        @{ Role = "roles/storage.admin"; Desc = "Storage Admin" }
     )
     
-    foreach ($role in $roles) {
-        Write-Host "    Adding $role..." -ForegroundColor Gray
-        Invoke-GCloud "gcloud projects add-iam-policy-binding $($CONFIG.ProjectId) --member=serviceAccount:$serviceAccountEmail --role=$role --quiet" -Silent
+    foreach ($r in $roles) {
+        Write-Host "    Adding $($r.Desc)..." -ForegroundColor Gray
+        Invoke-GCloud "gcloud projects add-iam-policy-binding $($CONFIG.ProjectId) --member=serviceAccount:$serviceAccountEmail --role=$($r.Role) --quiet" -Silent
     }
-    Write-Success "IAM roles granted"
+    Write-Success "All IAM roles granted ($($roles.Count) roles)"
 
     # Step 5: Create Artifact Registry Repositories
     Write-Step "Step 5/8" "Creating Artifact Registry repositories..."
     
     # UI Repository
-    Write-Host "    Creating UI repository: $($CONFIG.UIArtifactRepo)" -ForegroundColor Gray
     $uiRepoExists = Test-GCloudCommand "gcloud artifacts repositories describe $($CONFIG.UIArtifactRepo) --location=$($CONFIG.Region)"
     if ($uiRepoExists) {
         Write-Warn "Repository $($CONFIG.UIArtifactRepo) already exists, skipping"
@@ -245,7 +215,6 @@ try {
     }
     
     # BO Repository
-    Write-Host "    Creating BO repository: $($CONFIG.BOArtifactRepo)" -ForegroundColor Gray
     $boRepoExists = Test-GCloudCommand "gcloud artifacts repositories describe $($CONFIG.BOArtifactRepo) --location=$($CONFIG.Region)"
     if ($boRepoExists) {
         Write-Warn "Repository $($CONFIG.BOArtifactRepo) already exists, skipping"
@@ -258,9 +227,7 @@ try {
     # Step 6: Setup Workload Identity Federation
     Write-Step "Step 6/8" "Setting up Workload Identity Federation..."
     
-    Write-Host "    Creating Workload Identity Pool..." -ForegroundColor Gray
     $poolExists = Test-GCloudCommand "gcloud iam workload-identity-pools describe $($CONFIG.PoolName) --location=global"
-    
     if ($poolExists) {
         Write-Warn "Workload Identity Pool already exists, skipping"
     }
@@ -269,9 +236,7 @@ try {
         Write-Success "Workload Identity Pool created"
     }
     
-    Write-Host "    Creating Workload Identity Provider..." -ForegroundColor Gray
     $providerExists = Test-GCloudCommand "gcloud iam workload-identity-pools providers describe $($CONFIG.ProviderName) --workload-identity-pool=$($CONFIG.PoolName) --location=global"
-    
     if ($providerExists) {
         Write-Warn "Workload Identity Provider already exists, skipping"
     }
@@ -280,14 +245,12 @@ try {
         Write-Success "Workload Identity Provider created"
     }
     
-    Write-Host "    Getting Workload Identity Provider resource name..." -ForegroundColor Gray
     $workloadIdentityProvider = Invoke-GCloud "gcloud iam workload-identity-pools providers describe $($CONFIG.ProviderName) --workload-identity-pool=$($CONFIG.PoolName) --location=global --format=`"value(name)`"" -Silent
     $workloadIdentityProvider = $workloadIdentityProvider.Trim()
     
     $projectNumber = Invoke-GCloud "gcloud projects describe $($CONFIG.ProjectId) --format=`"value(projectNumber)`"" -Silent
     $projectNumber = $projectNumber.Trim()
     
-    Write-Host "    Configuring service account impersonation..." -ForegroundColor Gray
     $member = "principalSet://iam.googleapis.com/projects/$projectNumber/locations/global/workloadIdentityPools/$($CONFIG.PoolName)/attribute.repository/$GitHubRepo"
     Invoke-GCloud "gcloud iam service-accounts add-iam-policy-binding $serviceAccountEmail --role=roles/iam.workloadIdentityUser --member=`"$member`" --quiet" -Silent
     Write-Success "Workload Identity Federation configured"
@@ -295,21 +258,7 @@ try {
     # Step 7: Create Service Account Key
     Write-Step "Step 7/8" "Create Service Account Key (JSON)"
     
-    Write-Host @"
-
-  You have two authentication options for GitHub Actions:
-
-  Option 1: Workload Identity Federation (More Secure - Recommended)
-            - No JSON key needed
-            - Uses OIDC tokens
-
-  Option 2: Service Account Key (JSON)
-            - Download JSON key file
-            - Store entire JSON in GitHub Secret: GCP_SA_KEY
-
-"@ -ForegroundColor White
-
-    $createKey = Read-Host "Do you want to create/download a Service Account Key JSON? (y/n)"
+    $createKey = Read-Host "`nDo you want to create/download a Service Account Key JSON? (y/n)"
     
     $keyFile = $null
     if ($createKey -eq 'y' -or $createKey -eq 'Y') {
@@ -325,34 +274,16 @@ try {
 ==================================================================
 HOW TO ADD JSON KEY TO GITHUB SECRETS:
 ==================================================================
-
-  1. Open the file: $keyFile
-
-  2. Copy the ENTIRE contents (including curly braces)
-
-  3. Go to GitHub repository secrets:
-     https://github.com/$GitHubRepo/settings/secrets/actions
-
+  1. Open: $keyFile
+  2. Copy ENTIRE contents (including { })
+  3. Go to: https://github.com/$GitHubRepo/settings/secrets/actions
   4. Click 'New repository secret'
-
   5. Name: GCP_SA_KEY
-     Value: Paste the entire JSON content
-
+     Value: Paste the entire JSON
   6. Click 'Add secret'
-
-==================================================================
-SECURITY WARNINGS:
-==================================================================
-  * DELETE the local JSON file after adding to GitHub Secrets!
-  * NEVER commit this file to your repository!
-  * Add '$keyFile' to your .gitignore file!
+  7. DELETE the local $keyFile file!
 ==================================================================
 "@ -ForegroundColor Yellow
-        
-        # Show preview
-        Write-Host "`nPreview of $keyFile (first 5 lines):" -ForegroundColor Gray
-        Get-Content $keyFile -Head 5
-        Write-Host "..."
     }
 
     # Step 8: Update .gitignore
@@ -392,16 +323,21 @@ gcp-*.json
   SETUP COMPLETE!
 ==============================================
 
-GitHub Secrets Configuration
-----------------------------------------------
-Add these secrets at:
-  https://github.com/$GitHubRepo/settings/secrets/actions
-
+Service Account Roles Assigned:
 "@ -ForegroundColor Green
 
-    Write-Host "OPTION 1: Workload Identity Federation (Recommended)" -ForegroundColor Cyan
-    Write-Host "----------------------------------------------" -ForegroundColor Gray
-    
+    foreach ($r in $roles) {
+        Write-Host "  * $($r.Desc)" -ForegroundColor White
+    }
+
+    Write-Host @"
+
+GitHub Secrets Configuration
+----------------------------------------------
+Add at: https://github.com/$GitHubRepo/settings/secrets/actions
+
+"@ -ForegroundColor Cyan
+
     $secrets = @(
         [PSCustomObject]@{ Name = "GCP_PROJECT_ID"; Value = $CONFIG.ProjectId }
         [PSCustomObject]@{ Name = "GCP_SERVICE_ACCOUNT_EMAIL"; Value = $serviceAccountEmail }
@@ -410,10 +346,8 @@ Add these secrets at:
     $secrets | Format-Table -AutoSize
     
     if ($keyFile) {
-        Write-Host "OPTION 2: Service Account Key (Alternative)" -ForegroundColor Yellow
-        Write-Host "----------------------------------------------" -ForegroundColor Gray
-        Write-Host "GCP_PROJECT_ID = $($CONFIG.ProjectId)"
-        Write-Host "GCP_SA_KEY = <Entire contents of $keyFile>"
+        Write-Host "OR use Service Account Key:" -ForegroundColor Yellow
+        Write-Host "  GCP_SA_KEY = <contents of $keyFile>" -ForegroundColor Yellow
         Write-Host ""
     }
 
@@ -423,15 +357,12 @@ Artifact Registry URLs:
   UI: $($CONFIG.Region)-docker.pkg.dev/$($CONFIG.ProjectId)/$($CONFIG.UIArtifactRepo)
   BO: $($CONFIG.Region)-docker.pkg.dev/$($CONFIG.ProjectId)/$($CONFIG.BOArtifactRepo)
 
-Cloud Run Console:
-  https://console.cloud.google.com/run?project=$($CONFIG.ProjectId)
-
-GitHub Actions:
-  https://github.com/$GitHubRepo/actions
+Cloud Run: https://console.cloud.google.com/run?project=$($CONFIG.ProjectId)
+GitHub Actions: https://github.com/$GitHubRepo/actions
 ==============================================
 "@ -ForegroundColor White
 
-    # Copy to clipboard option
+    # Copy to clipboard
     $copyToClipboard = Read-Host "`nCopy secrets to clipboard? (y/n)"
     if ($copyToClipboard -eq 'y' -or $copyToClipboard -eq 'Y') {
         $clipboardText = @"
@@ -444,14 +375,13 @@ GCP_WORKLOAD_IDENTITY_PROVIDER=$workloadIdentityProvider
     }
 
     if ($keyFile) {
-        Write-Host "`n" -ForegroundColor Red
-        Write-Host "REMINDER: Delete the local key file after adding to GitHub!" -ForegroundColor Red
+        Write-Host "`nREMINDER: Delete the local key file!" -ForegroundColor Red
         Write-Host "  Remove-Item $keyFile" -ForegroundColor Yellow
     }
 }
 catch {
     Write-Err $_.Exception.Message
-    Write-Host "`nSetup failed. Please check the error above." -ForegroundColor Red
+    Write-Host "`nSetup failed." -ForegroundColor Red
     exit 1
 }
 

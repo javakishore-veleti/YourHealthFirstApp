@@ -61,13 +61,11 @@ PROVIDER_NAME="github-actions-provider"
 detect_github_repo() {
     local remote_url=""
     
-    # Check if we're in a git repository
     if ! git rev-parse --is-inside-work-tree &>/dev/null; then
         echo ""
         return 1
     fi
     
-    # Try to get the remote URL (prefer origin)
     remote_url=$(git remote get-url origin 2>/dev/null || git remote get-url $(git remote | head -1) 2>/dev/null || echo "")
     
     if [[ -z "$remote_url" ]]; then
@@ -75,7 +73,6 @@ detect_github_repo() {
         return 1
     fi
     
-    # Extract owner/repo from various URL formats
     local repo=""
     
     if [[ "$remote_url" =~ github\.com[:/]([^/]+/[^/]+?)(\.git)?$ ]]; then
@@ -86,7 +83,6 @@ detect_github_repo() {
     echo "$repo"
 }
 
-# Auto-detect or prompt for GitHub repo
 GITHUB_REPO=$(detect_github_repo)
 
 if [[ -z "$GITHUB_REPO" ]]; then
@@ -141,7 +137,9 @@ gcloud services enable \
     artifactregistry.googleapis.com \
     iamcredentials.googleapis.com \
     iam.googleapis.com \
-    cloudresourcemanager.googleapis.com
+    cloudresourcemanager.googleapis.com \
+    sqladmin.googleapis.com \
+    secretmanager.googleapis.com
 
 echo "✅ APIs enabled successfully"
 
@@ -162,13 +160,33 @@ fi
 # Grant required IAM roles to the Service Account
 echo ""
 echo "📌 Step 4/8: Granting IAM roles to Service Account..."
+echo ""
+echo "  Assigning comprehensive roles for Cloud Run, Artifact Registry,"
+echo "  Cloud SQL, Secret Manager, and Storage..."
+echo ""
 
+# Comprehensive roles based on your working configuration
 ROLES=(
-    "roles/run.admin"
-    "roles/artifactregistry.writer"
-    "roles/artifactregistry.reader"
-    "roles/iam.serviceAccountUser"
-    "roles/storage.admin"
+    # Artifact Registry
+    "roles/artifactregistry.admin"          # Administrator access to create and manage repositories
+    "roles/artifactregistry.writer"         # Access to read and write repository items
+    
+    # Cloud Run
+    "roles/run.admin"                       # Full control over all Cloud Run resources
+    
+    # Cloud SQL (for database connectivity)
+    "roles/cloudsql.admin"                  # Full control of Cloud SQL resources
+    "roles/cloudsql.client"                 # Connectivity access to Cloud SQL instances
+    
+    # Secret Manager (for storing sensitive config)
+    "roles/secretmanager.admin"             # Full access to administer Secret Manager resources
+    "roles/secretmanager.secretAccessor"    # Allows accessing the payload of secrets
+    
+    # Service Account
+    "roles/iam.serviceAccountUser"          # Run operations as the service account
+    
+    # Storage (for Cloud Build, artifacts, etc.)
+    "roles/storage.admin"                   # Grants full control of buckets and objects
 )
 
 for ROLE in "${ROLES[@]}"; do
@@ -179,7 +197,8 @@ for ROLE in "${ROLES[@]}"; do
         --quiet
 done
 
-echo "✅ IAM roles granted"
+echo ""
+echo "✅ IAM roles granted (${#ROLES[@]} roles)"
 
 # Create Artifact Registry repositories
 echo ""
@@ -346,7 +365,6 @@ GITIGNORE_ENTRIES=(
 )
 
 if [[ -f ".gitignore" ]]; then
-    # Check if already has the entry
     if ! grep -q "\*-key.json" .gitignore; then
         echo "" >> .gitignore
         for entry in "${GITIGNORE_ENTRIES[@]}"; do
@@ -371,6 +389,18 @@ echo ""
 echo "=============================================="
 echo "✅ SETUP COMPLETE!"
 echo "=============================================="
+echo ""
+echo "📋 Service Account Roles Assigned:"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  • Artifact Registry Administrator"
+echo "  • Artifact Registry Writer"
+echo "  • Cloud Run Admin"
+echo "  • Cloud SQL Admin"
+echo "  • Cloud SQL Client"
+echo "  • Secret Manager Admin"
+echo "  • Secret Manager Secret Accessor"
+echo "  • Service Account User"
+echo "  • Storage Admin"
 echo ""
 echo "📋 GitHub Secrets Configuration"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
