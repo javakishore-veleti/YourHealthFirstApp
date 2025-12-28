@@ -1091,3 +1091,14 @@ src/app/v2/
 
 ```
 
+```shell
+
+cd python_flask_back_office/healthcare_plans_bo
+./run_local.sh # type 2 or select option 2
+# python v2/run_v2.py
+
+# Terminal 2 - Angular (port 4200)
+cd angular_front_end/healthcare_plans_ui
+ng serve
+
+```

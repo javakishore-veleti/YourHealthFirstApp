@@ -1,0 +1,115 @@
+<div class="profile-container">
+  <!-- Loading State -->
+  <div class="loading-state" *ngIf="isLoading">
+    <div class="spinner-large"></div>
+    <p>Loading profile...</p>
+  </div>
+
+  <!-- Error State -->
+  <div class="error-state" *ngIf="!isLoading && errorMessage">
+    <div class="error-icon">⚠️</div>
+    <h3>Error Loading Profile</h3>
+    <p>{{ errorMessage }}</p>
+    <button class="btn-retry" (click)="loadProfile()">Try Again</button>
+  </div>
+
+  <!-- Profile Content -->
+  <div class="profile-content" *ngIf="!isLoading && !errorMessage && customer">
+    <!-- Header -->
+    <div class="profile-header">
+      <div class="avatar">
+        {{ customer.first_name.charAt(0) }}{{ customer.last_name.charAt(0) }}
+      </div>
+      <div class="header-info">
+        <h1>{{ customer.full_name }}</h1>
+        <p class="email">{{ customer.email }}</p>
+        <span class="badge" [class.verified]="customer.is_verified" [class.unverified]="!customer.is_verified">
+          {{ customer.is_verified ? '✓ Verified' : 'Unverified' }}
+        </span>
+      </div>
+      <button class="btn-logout" (click)="logout()">
+        <span>🚪</span> Logout
+      </button>
+    </div>
+
+    <!-- Profile Details -->
+    <div class="profile-details">
+      <div class="section">
+        <h2>Personal Information</h2>
+        <div class="info-grid">
+          <div class="info-item">
+            <label>First Name</label>
+            <span>{{ customer.first_name }}</span>
+          </div>
+          <div class="info-item">
+            <label>Last Name</label>
+            <span>{{ customer.last_name }}</span>
+          </div>
+          <div class="info-item">
+            <label>Email</label>
+            <span>{{ customer.email }}</span>
+          </div>
+          <div class="info-item">
+            <label>Mobile Number</label>
+            <span>{{ customer.mobile_number }}</span>
+          </div>
+          <div class="info-item">
+            <label>Date of Birth</label>
+            <span>{{ formatDate(customer.date_of_birth) }}</span>
+          </div>
+          <div class="info-item">
+            <label>Member Since</label>
+            <span>{{ formatDate(customer.created_at) }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="section" *ngIf="customer.address || customer.city || customer.state">
+        <h2>Address</h2>
+        <div class="info-grid">
+          <div class="info-item full-width" *ngIf="customer.address">
+            <label>Street Address</label>
+            <span>{{ customer.address }}</span>
+          </div>
+          <div class="info-item" *ngIf="customer.city">
+            <label>City</label>
+            <span>{{ customer.city }}</span>
+          </div>
+          <div class="info-item" *ngIf="customer.state">
+            <label>State</label>
+            <span>{{ customer.state }}</span>
+          </div>
+          <div class="info-item" *ngIf="customer.pincode">
+            <label>Pincode</label>
+            <span>{{ customer.pincode }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>Account Status</h2>
+        <div class="status-badges">
+          <span class="status-badge" [class.active]="customer.is_active">
+            {{ customer.is_active ? '✓ Active' : '✕ Inactive' }}
+          </span>
+          <span class="status-badge" [class.verified]="customer.is_verified">
+            {{ customer.is_verified ? '✓ Email Verified' : '✕ Email Not Verified' }}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="quick-actions">
+      <button class="btn-action">
+        <span>✏️</span> Edit Profile
+      </button>
+      <button class="btn-action">
+        <span>🔒</span> Change Password
+      </button>
+      <button class="btn-action">
+        <span>📋</span> View Orders
+      </button>
+    </div>
+  </div>
+</div>

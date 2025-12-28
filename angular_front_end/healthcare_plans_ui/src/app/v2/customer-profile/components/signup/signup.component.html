@@ -1,0 +1,129 @@
+<div class="signup-container">
+  <div class="signup-card">
+    <div class="signup-header">
+      <h2>Create Account</h2>
+      <p>Join YourHealthPlans today</p>
+    </div>
+
+    <div class="alert alert-success" *ngIf="successMessage">
+      <span class="alert-icon">✓</span>
+      {{ successMessage }}
+    </div>
+
+    <div class="alert alert-error" *ngIf="errorMessage">
+      <span class="alert-icon">✕</span>
+      {{ errorMessage }}
+    </div>
+
+    <form [formGroup]="signupForm" (ngSubmit)="onSubmit()">
+      <div class="form-row">
+        <div class="form-group">
+          <label for="first_name">First Name</label>
+          <input 
+            type="text" 
+            id="first_name" 
+            formControlName="first_name"
+            placeholder="Enter first name"
+            [class.error]="f['first_name'].touched && f['first_name'].invalid">
+          <span class="error-message" *ngIf="f['first_name'].touched && f['first_name'].errors?.['required']">
+            First name is required
+          </span>
+          <span class="error-message" *ngIf="f['first_name'].touched && f['first_name'].errors?.['minlength']">
+            Minimum 2 characters required
+          </span>
+        </div>
+
+        <div class="form-group">
+          <label for="last_name">Last Name</label>
+          <input 
+            type="text" 
+            id="last_name" 
+            formControlName="last_name"
+            placeholder="Enter last name"
+            [class.error]="f['last_name'].touched && f['last_name'].invalid">
+          <span class="error-message" *ngIf="f['last_name'].touched && f['last_name'].errors?.['required']">
+            Last name is required
+          </span>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="email">Email Address</label>
+        <input 
+          type="email" 
+          id="email" 
+          formControlName="email"
+          placeholder="Enter your email"
+          [class.error]="f['email'].touched && f['email'].invalid">
+        <span class="error-message" *ngIf="f['email'].touched && f['email'].errors?.['required']">
+          Email is required
+        </span>
+        <span class="error-message" *ngIf="f['email'].touched && f['email'].errors?.['email']">
+          Please enter a valid email
+        </span>
+      </div>
+
+      <div class="form-group">
+        <label for="mobile_number">Mobile Number</label>
+        <input 
+          type="tel" 
+          id="mobile_number" 
+          formControlName="mobile_number"
+          placeholder="Enter 10-digit mobile number"
+          [class.error]="f['mobile_number'].touched && f['mobile_number'].invalid">
+        <span class="error-message" *ngIf="f['mobile_number'].touched && f['mobile_number'].errors?.['required']">
+          Mobile number is required
+        </span>
+        <span class="error-message" *ngIf="f['mobile_number'].touched && f['mobile_number'].errors?.['pattern']">
+          Please enter a valid mobile number (10-15 digits)
+        </span>
+      </div>
+
+      <div class="form-group">
+        <label for="password">Password</label>
+        <div class="password-input">
+          <input 
+            [type]="showPassword ? 'text' : 'password'" 
+            id="password" 
+            formControlName="password"
+            placeholder="Enter password (min 8 characters)"
+            [class.error]="f['password'].touched && f['password'].invalid">
+          <button type="button" class="toggle-password" (click)="togglePasswordVisibility()">
+            {{ showPassword ? '👁️' : '👁️‍🗨️' }}
+          </button>
+        </div>
+        <span class="error-message" *ngIf="f['password'].touched && f['password'].errors?.['required']">
+          Password is required
+        </span>
+        <span class="error-message" *ngIf="f['password'].touched && f['password'].errors?.['minlength']">
+          Password must be at least 8 characters
+        </span>
+      </div>
+
+      <div class="form-group">
+        <label for="confirm_password">Confirm Password</label>
+        <input 
+          type="password" 
+          id="confirm_password" 
+          formControlName="confirm_password"
+          placeholder="Confirm your password"
+          [class.error]="f['confirm_password'].touched && (f['confirm_password'].invalid || hasPasswordMismatch)">
+        <span class="error-message" *ngIf="f['confirm_password'].touched && f['confirm_password'].errors?.['required']">
+          Please confirm your password
+        </span>
+        <span class="error-message" *ngIf="f['confirm_password'].touched && hasPasswordMismatch">
+          Passwords do not match
+        </span>
+      </div>
+
+      <button type="submit" class="btn-signup" [disabled]="isLoading">
+        <span *ngIf="!isLoading">Create Account</span>
+        <span *ngIf="isLoading" class="spinner"></span>
+      </button>
+    </form>
+
+    <div class="signup-footer">
+      <p>Already have an account? <a routerLink="/v2/login">Sign In</a></p>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,69 @@
+<div class="login-container">
+  <div class="login-card">
+    <div class="login-header">
+      <div class="logo">
+        <span class="logo-icon">🏥</span>
+      </div>
+      <h2>Welcome Back</h2>
+      <p>Sign in to YourHealthPlans</p>
+    </div>
+
+    <div class="alert alert-error" *ngIf="errorMessage">
+      <span class="alert-icon">✕</span>
+      {{ errorMessage }}
+    </div>
+
+    <form [formGroup]="loginForm" (ngSubmit)="onSubmit()">
+      <div class="form-group">
+        <label for="email">Email Address</label>
+        <input 
+          type="email" 
+          id="email" 
+          formControlName="email"
+          placeholder="Enter your email"
+          [class.error]="f['email'].touched && f['email'].invalid">
+        <span class="error-message" *ngIf="f['email'].touched && f['email'].errors?.['required']">
+          Email is required
+        </span>
+        <span class="error-message" *ngIf="f['email'].touched && f['email'].errors?.['email']">
+          Please enter a valid email
+        </span>
+      </div>
+
+      <div class="form-group">
+        <label for="password">Password</label>
+        <div class="password-input">
+          <input 
+            [type]="showPassword ? 'text' : 'password'" 
+            id="password" 
+            formControlName="password"
+            placeholder="Enter your password"
+            [class.error]="f['password'].touched && f['password'].invalid">
+          <button type="button" class="toggle-password" (click)="togglePasswordVisibility()">
+            {{ showPassword ? '👁️' : '👁️‍🗨️' }}
+          </button>
+        </div>
+        <span class="error-message" *ngIf="f['password'].touched && f['password'].errors?.['required']">
+          Password is required
+        </span>
+      </div>
+
+      <div class="form-options">
+        <label class="checkbox-label">
+          <input type="checkbox" formControlName="remember_me">
+          <span>Remember me</span>
+        </label>
+        <a href="#" class="forgot-password">Forgot password?</a>
+      </div>
+
+      <button type="submit" class="btn-login" [disabled]="isLoading">
+        <span *ngIf="!isLoading">Sign In</span>
+        <span *ngIf="isLoading" class="spinner"></span>
+      </button>
+    </form>
+
+    <div class="login-footer">
+      <p>Don't have an account? <a routerLink="/v2/signup">Create Account</a></p>
+    </div>
+  </div>
+</div>
