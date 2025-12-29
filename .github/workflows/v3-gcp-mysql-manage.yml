@@ -1,0 +1,304 @@
+name: "V3 GCP MySQL Database - Manage"
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        type: choice
+        options:
+          - create
+          - destroy
+      environment:
+        description: 'Environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      region:
+        description: 'GCP Region'
+        required: true
+        default: 'us-central1'
+        type: choice
+        options:
+          - us-central1
+          - us-east1
+          - us-west1
+          - europe-west1
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  INSTANCE_NAME: healthcare-mysql-v3-${{ github.event.inputs.environment }}
+  DATABASE_NAME: healthcare_db
+  DATABASE_USER: healthcare_app
+  REGION: ${{ github.event.inputs.region }}
+
+jobs:
+  # ==================== CREATE DATABASE ====================
+  create-database:
+    if: github.event.inputs.action == 'create'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Enable required APIs
+        run: |
+          gcloud services enable sqladmin.googleapis.com
+          gcloud services enable sql-component.googleapis.com
+          gcloud services enable servicenetworking.googleapis.com
+          gcloud services enable vpcaccess.googleapis.com
+
+      - name: Check if instance exists
+        id: check_instance
+        run: |
+          if gcloud sql instances describe ${{ env.INSTANCE_NAME }} --project=${{ env.PROJECT_ID }} 2>/dev/null; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "✅ Instance ${{ env.INSTANCE_NAME }} already exists"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "📦 Instance ${{ env.INSTANCE_NAME }} does not exist, will create"
+          fi
+
+      - name: Generate database password
+        id: gen_password
+        run: |
+          # Generate a secure random password
+          DB_PASSWORD=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 20)
+          echo "::add-mask::$DB_PASSWORD"
+          echo "db_password=$DB_PASSWORD" >> $GITHUB_OUTPUT
+
+      - name: Create Cloud SQL Instance
+        if: steps.check_instance.outputs.exists == 'false'
+        run: |
+          echo "🚀 Creating Cloud SQL MySQL instance..."
+          
+          gcloud sql instances create ${{ env.INSTANCE_NAME }} \
+            --database-version=MYSQL_8_0 \
+            --tier=db-f1-micro \
+            --region=${{ env.REGION }} \
+            --storage-type=HDD \
+            --storage-size=10GB \
+            --storage-auto-increase \
+            --backup-start-time=03:00 \
+            --maintenance-window-day=SUN \
+            --maintenance-window-hour=04 \
+            --availability-type=zonal \
+            --root-password=${{ steps.gen_password.outputs.db_password }} \
+            --project=${{ env.PROJECT_ID }}
+          
+          echo "✅ Cloud SQL instance created successfully"
+
+      - name: Wait for instance to be ready
+        run: |
+          echo "⏳ Waiting for instance to be ready..."
+          for i in {1..30}; do
+            STATUS=$(gcloud sql instances describe ${{ env.INSTANCE_NAME }} --format="value(state)" 2>/dev/null || echo "PENDING")
+            if [ "$STATUS" == "RUNNABLE" ]; then
+              echo "✅ Instance is ready!"
+              break
+            fi
+            echo "Status: $STATUS - waiting..."
+            sleep 10
+          done
+
+      - name: Configure instance for Cloud Run access
+        run: |
+          echo "🔧 Configuring instance for Cloud Run access..."
+          
+          # Enable public IP (required for Cloud Run without VPC connector)
+          gcloud sql instances patch ${{ env.INSTANCE_NAME }} \
+            --authorized-networks=0.0.0.0/0 \
+            --project=${{ env.PROJECT_ID }} \
+            --quiet || true
+          
+          echo "✅ Instance configured for Cloud Run access"
+
+      - name: Create database
+        run: |
+          echo "📦 Creating database..."
+          
+          # Check if database exists
+          if gcloud sql databases describe ${{ env.DATABASE_NAME }} --instance=${{ env.INSTANCE_NAME }} 2>/dev/null; then
+            echo "✅ Database ${{ env.DATABASE_NAME }} already exists"
+          else
+            gcloud sql databases create ${{ env.DATABASE_NAME }} \
+              --instance=${{ env.INSTANCE_NAME }} \
+              --charset=utf8mb4 \
+              --collation=utf8mb4_unicode_ci \
+              --project=${{ env.PROJECT_ID }}
+            echo "✅ Database created successfully"
+          fi
+
+      - name: Create database user
+        run: |
+          echo "👤 Creating database user..."
+          
+          # Delete user if exists (to reset password)
+          gcloud sql users delete ${{ env.DATABASE_USER }} \
+            --instance=${{ env.INSTANCE_NAME }} \
+            --host="%" \
+            --project=${{ env.PROJECT_ID }} \
+            --quiet 2>/dev/null || true
+          
+          # Create user with new password
+          gcloud sql users create ${{ env.DATABASE_USER }} \
+            --instance=${{ env.INSTANCE_NAME }} \
+            --host="%" \
+            --password=${{ steps.gen_password.outputs.db_password }} \
+            --project=${{ env.PROJECT_ID }}
+          
+          echo "✅ Database user created successfully"
+
+      - name: Get instance connection details
+        id: connection
+        run: |
+          # Get public IP
+          PUBLIC_IP=$(gcloud sql instances describe ${{ env.INSTANCE_NAME }} \
+            --format="value(ipAddresses[0].ipAddress)" \
+            --project=${{ env.PROJECT_ID }})
+          
+          # Get connection name
+          CONNECTION_NAME=$(gcloud sql instances describe ${{ env.INSTANCE_NAME }} \
+            --format="value(connectionName)" \
+            --project=${{ env.PROJECT_ID }})
+          
+          echo "public_ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
+          echo "connection_name=$CONNECTION_NAME" >> $GITHUB_OUTPUT
+
+      - name: Store credentials in Secret Manager
+        run: |
+          # Enable Secret Manager API
+          gcloud services enable secretmanager.googleapis.com
+          
+          # Create or update secrets
+          SECRET_NAME="healthcare-mysql-v3-${{ github.event.inputs.environment }}"
+          
+          # Create JSON with all connection details
+          cat > /tmp/db_credentials.json << EOF
+          {
+            "host": "${{ steps.connection.outputs.public_ip }}",
+            "port": "3306",
+            "database": "${{ env.DATABASE_NAME }}",
+            "username": "${{ env.DATABASE_USER }}",
+            "password": "${{ steps.gen_password.outputs.db_password }}",
+            "connection_name": "${{ steps.connection.outputs.connection_name }}",
+            "instance_name": "${{ env.INSTANCE_NAME }}"
+          }
+          EOF
+          
+          # Delete secret if exists
+          gcloud secrets delete $SECRET_NAME --project=${{ env.PROJECT_ID }} --quiet 2>/dev/null || true
+          
+          # Create new secret
+          gcloud secrets create $SECRET_NAME \
+            --replication-policy="automatic" \
+            --project=${{ env.PROJECT_ID }}
+          
+          # Add secret version
+          gcloud secrets versions add $SECRET_NAME \
+            --data-file=/tmp/db_credentials.json \
+            --project=${{ env.PROJECT_ID }}
+          
+          # Clean up
+          rm /tmp/db_credentials.json
+          
+          echo "✅ Credentials stored in Secret Manager"
+
+      - name: Summary
+        run: |
+          echo "## 🎉 MySQL Database Created Successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Connection Details" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Instance Name | \`${{ env.INSTANCE_NAME }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Database | \`${{ env.DATABASE_NAME }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| User | \`${{ env.DATABASE_USER }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Host | \`${{ steps.connection.outputs.public_ip }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Port | \`3306\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Connection Name | \`${{ steps.connection.outputs.connection_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Secret Manager" >> $GITHUB_STEP_SUMMARY
+          echo "Credentials stored in: \`healthcare-mysql-v3-${{ github.event.inputs.environment }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "1. Run the **V3 Flask Deploy** workflow to deploy the application" >> $GITHUB_STEP_SUMMARY
+          echo "2. The Flask app will automatically connect to this database" >> $GITHUB_STEP_SUMMARY
+
+  # ==================== DESTROY DATABASE ====================
+  destroy-database:
+    if: github.event.inputs.action == 'destroy'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Confirm destruction
+        run: |
+          echo "⚠️ WARNING: This will permanently delete the database instance!"
+          echo "Instance: ${{ env.INSTANCE_NAME }}"
+          echo "Environment: ${{ github.event.inputs.environment }}"
+
+      - name: Delete Secret from Secret Manager
+        run: |
+          SECRET_NAME="healthcare-mysql-v3-${{ github.event.inputs.environment }}"
+          
+          if gcloud secrets describe $SECRET_NAME --project=${{ env.PROJECT_ID }} 2>/dev/null; then
+            gcloud secrets delete $SECRET_NAME \
+              --project=${{ env.PROJECT_ID }} \
+              --quiet
+            echo "✅ Secret deleted"
+          else
+            echo "ℹ️ Secret does not exist"
+          fi
+
+      - name: Delete Cloud SQL Instance
+        run: |
+          if gcloud sql instances describe ${{ env.INSTANCE_NAME }} --project=${{ env.PROJECT_ID }} 2>/dev/null; then
+            echo "🗑️ Deleting Cloud SQL instance..."
+            
+            gcloud sql instances delete ${{ env.INSTANCE_NAME }} \
+              --project=${{ env.PROJECT_ID }} \
+              --quiet
+            
+            echo "✅ Cloud SQL instance deleted"
+          else
+            echo "ℹ️ Instance does not exist"
+          fi
+
+      - name: Summary
+        run: |
+          echo "## 🗑️ MySQL Database Destroyed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Instance | \`${{ env.INSTANCE_NAME }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | \`${{ github.event.inputs.environment }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | ✅ Deleted |" >> $GITHUB_STEP_SUMMARY

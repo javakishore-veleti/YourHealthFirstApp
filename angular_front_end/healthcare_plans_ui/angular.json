@@ -59,6 +59,14 @@
               "optimization": false,
               "extractLicenses": false,
               "sourceMap": true
+            },
+            "v3": {
+              "fileReplacements": [
+                {
+                  "replace": "src/environments/environment.ts",
+                  "with": "src/environments/environment.v3.ts"
+                }
+              ]
             }
           },
           "defaultConfiguration": "production"
@@ -71,6 +79,9 @@
             },
             "development": {
               "buildTarget": "healthcare_plans_ui:build:development"
+            },
+            "v3": {
+              "buildTarget": "healthcare_plans_ui:build:v3"
             }
           },
           "defaultConfiguration": "development"

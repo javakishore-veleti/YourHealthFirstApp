@@ -1102,3 +1102,40 @@ cd angular_front_end/healthcare_plans_ui
 ng serve
 
 ```
+
+## V3 Local Development
+
+For V3 local development with MySQL, you have two options:
+
+1. Option 1: Docker MySQL (Recommended)
+2. Option 2: Full Docker Setup
+
+### Option 1:
+```shell
+
+# Start MySQL + phpMyAdmin only (no Flask container)
+./run_local.sh mysql
+
+# Then run Flask V3 locally
+./run_local.sh v3
+
+./run_local.sh stop 
+
+```
+
+#### Access:
+- MySQL: localhost:4306
+- phpMyAdmin:       http://localhost:8081
+- phpMyAdmin:       http://localhost:8083                   root / root_password
+- Health Check:     http://localhost:8082/api/v3/health     root / root_password
+- Flask V3 API      http://localhost:8082
+- MySQL             localhost:3306                          healthcare_app / healthcare_password
+
+### Option 2:
+```shell
+# Start everything (MySQL + Flask + phpMyAdmin)
+./run_local.sh
+# Choose option 6
+
+```
+

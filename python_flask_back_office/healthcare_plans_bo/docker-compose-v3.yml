@@ -1,0 +1,91 @@
+# docker-compose-v3.yml
+# Local development environment for Flask V3 with MySQL
+# Location: python_flask_back_office/healthcare_plans_bo/docker-compose-v3.yml
+#
+# Usage:
+#   Start all:        docker-compose -f docker-compose-v3.yml up -d
+#   Start MySQL only: docker-compose -f docker-compose-v3.yml up -d mysql phpmyadmin
+#   Stop all:         docker-compose -f docker-compose-v3.yml down
+#   Stop & cleanup:   docker-compose -f docker-compose-v3.yml down -v
+
+services:
+  # ============================================
+  # MySQL Database
+  # ============================================
+  mysql:
+    image: mysql:8.0
+    container_name: healthcare-mysql-v3
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_DATABASE: healthcare_db
+      MYSQL_USER: healthcare_app
+      MYSQL_PASSWORD: healthcare_password
+    ports:
+      - "4306:3306"   # External:Internal - access from laptop via 4306
+    volumes:
+      - mysql_data_v3:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot_password"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - healthcare-network-v3
+
+  # ============================================
+  # phpMyAdmin (Database Management UI)
+  # ============================================
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: healthcare-phpmyadmin
+    restart: unless-stopped
+    ports:
+      - "8083:80"
+    environment:
+      PMA_HOST: mysql        # Docker service name
+      PMA_PORT: 3306         # Internal Docker port (NOT 4306!)
+      MYSQL_ROOT_PASSWORD: root_password
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - healthcare-network-v3
+
+  # ============================================
+  # Flask V3 API (Optional - can run locally instead)
+  # ============================================
+  flask-v3:
+    build:
+      context: .
+      dockerfile: Dockerfile.v3
+    container_name: healthcare-flask-v3
+    restart: unless-stopped
+    ports:
+      - "8082:8080"
+    environment:
+      - FLASK_ENV=development
+      - PORT=8080
+      - DB_HOST=mysql        # Docker service name
+      - DB_PORT=3306         # Internal Docker port (NOT 4306!)
+      - DB_NAME=healthcare_db
+      - DB_USER=healthcare_app
+      - DB_PASSWORD=healthcare_password
+      - JWT_SECRET_KEY=local-dev-jwt-secret-key
+      - SECRET_KEY=local-dev-secret-key
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - healthcare-network-v3
+    profiles:
+      - full  # Only starts when using --profile full
+
+volumes:
+  mysql_data_v3:
+    driver: local
+
+networks:
+  healthcare-network-v3:
+    driver: bridge
