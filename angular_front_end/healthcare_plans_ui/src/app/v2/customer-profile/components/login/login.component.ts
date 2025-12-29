@@ -26,7 +26,8 @@ export class LoginComponent implements OnInit {
 
   ngOnInit(): void {
     this.initForm();
-    this.returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/v2/profile';
+    // this.returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/v2/profile';
+    this.returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/v3';
     
     if (this.authService.isAuthenticated()) {
       this.router.navigate([this.returnUrl]);
